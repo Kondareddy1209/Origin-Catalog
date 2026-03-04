@@ -36,8 +36,10 @@ export interface MockOrder {
     consumerId: string;
     consumerName: string;
     shopkeeperId: string;
+    shopName: string;
     productId: string;
     productName: string;
+    quantity: number;
     amount: string;
     status: "pending" | "paid" | "cancelled";
     createdAt: string;
@@ -173,8 +175,10 @@ export const MOCK_ORDERS: MockOrder[] = [
         consumerId: "u4",
         consumerName: "Priya Consumer",
         shopkeeperId: "u2",
+        shopName: "Ravi's Handicrafts",
         productId: "p1",
         productName: "Handmade Clay Pot",
+        quantity: 1,
         amount: "₹800",
         status: "paid",
         createdAt: "2025-05-10",
@@ -184,8 +188,10 @@ export const MOCK_ORDERS: MockOrder[] = [
         consumerId: "u5",
         consumerName: "Arjun Consumer",
         shopkeeperId: "u2",
+        shopName: "Ravi's Handicrafts",
         productId: "p2",
         productName: "Red Silk Scarf",
+        quantity: 1,
         amount: "₹1200",
         status: "pending",
         createdAt: "2025-05-11",
@@ -195,9 +201,11 @@ export const MOCK_ORDERS: MockOrder[] = [
         consumerId: "u4",
         consumerName: "Priya Consumer",
         shopkeeperId: "u3",
+        shopName: "Meena Textiles",
         productId: "p3",
         productName: "Cotton Fabric Roll",
-        amount: "₹650",
+        quantity: 2,
+        amount: "₹1300",
         status: "paid",
         createdAt: "2025-05-12",
     },

@@ -3,13 +3,15 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/lib/AuthContext";
+import { useData } from "@/lib/DataContext";
+import { useSpeechRecognition } from "@/lib/useSpeechRecognition";
 import { useRouter } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
 import {
     Plus, Edit2, Trash2, Package, LayoutDashboard, User, Mic,
     QrCode, CheckCircle2, Save, X, AlertTriangle, type LucideIcon
 } from "lucide-react";
-import { MOCK_PRODUCTS, MOCK_ORDERS, type MockProduct } from "@/lib/mockData";
+import { type MockProduct } from "@/lib/mockData";
 import { detectScam, getMatchedKeywords } from "@/lib/scamDetection";
 import Image from "next/image";
 
@@ -32,9 +34,7 @@ function FakeQR({ amount, id }: { amount: string; id: string }) {
     const cells: boolean[] = Array.from({ length: 25 * 25 }, (_, i) => {
         const row = Math.floor(i / 25);
         const col = i % 25;
-        // Corners
         if ((row < 7 && col < 7) || (row < 7 && col > 17) || (row > 17 && col < 7)) return true;
-        // Random-ish pattern based on id
         const seed = (row * 31 + col * 17 + id.charCodeAt(0)) % 3;
         return seed === 0;
     });
@@ -55,14 +55,15 @@ function FakeQR({ amount, id }: { amount: string; id: string }) {
 // SHOPKEEPER DASHBOARD
 // ---------------------------------------------------------------
 export default function ShopkeeperDashboard() {
-    const { user, isAuthenticated, isLoading } = useAuth();
+    const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+    const { products, orders, addProduct, updateProduct, deleteProduct } = useData();
+    const { isListening, startListening, stopListening, error: speechError } = useSpeechRecognition();
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<Tab>("overview");
 
-    // My products (seeded from mock)
-    const [products, setProducts] = useState<MockProduct[]>(
-        MOCK_PRODUCTS.filter((p) => p.shopkeeperId === "u2")
-    );
+    // My products & orders
+    const myProducts = products.filter((p) => p.shopkeeperId === user?.id);
+    const myOrders = orders.filter((o) => o.shopkeeperId === user?.id);
 
     // Shop profile
     const [profile, setProfile] = useState({
@@ -80,7 +81,6 @@ export default function ShopkeeperDashboard() {
     const [editId, setEditId] = useState<string | null>(null);
     const [formError, setFormError] = useState("");
     const [formSuccess, setFormSuccess] = useState("");
-    const [isListening, setIsListening] = useState(false);
 
     // QR payment state
     const [qrAmount, setQrAmount] = useState("₹0");
@@ -88,20 +88,18 @@ export default function ShopkeeperDashboard() {
     const [qrPaid, setQrPaid] = useState(false);
 
     useEffect(() => {
-        if (!isLoading && (!isAuthenticated || user?.role !== "shopkeeper")) {
+        if (!authLoading && (!isAuthenticated || user?.role !== "shopkeeper")) {
             router.replace("/login");
         }
-    }, [isLoading, isAuthenticated, user, router]);
+    }, [authLoading, isAuthenticated, user, router]);
 
-    if (isLoading || !user) {
+    if (authLoading || !user) {
         return (
             <div className="min-h-screen bg-background flex items-center justify-center">
                 <div className="w-10 h-10 border-2 border-primary border-t-transparent rounded-full animate-spin" />
             </div>
         );
     }
-
-    const myOrders = MOCK_ORDERS.filter((o) => o.shopkeeperId === "u2");
 
     const startEdit = (p: MockProduct) => {
         setForm({ name: p.name, description: p.description, price: p.price, category: p.category, quantity: String(p.quantity), image: p.image ?? "/product-pot.png" });
@@ -110,8 +108,6 @@ export default function ShopkeeperDashboard() {
         setFormError("");
         setFormSuccess("");
     };
-
-    const deleteProduct = (id: string) => setProducts((prev) => prev.filter((p) => p.id !== id));
 
     const saveProduct = (e: React.FormEvent) => {
         e.preventDefault();
@@ -125,17 +121,14 @@ export default function ShopkeeperDashboard() {
         }
 
         if (editId) {
-            setProducts((prev) =>
-                prev.map((p) =>
-                    p.id === editId
-                        ? { ...p, ...form, priceNum: parseFloat(form.price.replace(/[^0-9.]/g, "")) || 0, quantity: parseInt(form.quantity) || 0, shopName: profile.shopName }
-                        : p
-                )
-            );
+            updateProduct(editId, {
+                ...form,
+                priceNum: parseFloat(form.price.replace(/[^0-9.]/g, "")) || 0,
+                quantity: parseInt(form.quantity) || 0
+            });
             setFormSuccess("Product updated successfully!");
         } else {
-            const newProduct: MockProduct = {
-                id: `p${Date.now()}`,
+            addProduct({
                 shopkeeperId: user.id,
                 shopName: profile.shopName,
                 name: form.name.trim(),
@@ -145,12 +138,7 @@ export default function ShopkeeperDashboard() {
                 category: form.category,
                 image: form.image,
                 quantity: parseInt(form.quantity) || 1,
-                status: "active",
-                isBanned: false,
-                isScam: false,
-                createdAt: new Date().toISOString().split("T")[0],
-            };
-            setProducts((prev) => [newProduct, ...prev]);
+            });
             setFormSuccess("Product listed successfully!");
         }
         setForm(blankForm);
@@ -159,22 +147,30 @@ export default function ShopkeeperDashboard() {
     };
 
     const handleVoiceListing = () => {
-        setIsListening(true);
-        // Simulate voice recognition parsing
-        // In a real app, this would use Web Speech API or a backend AI
-        setTimeout(() => {
-            setForm({
-                name: "Handmade Bamboo Basket",
-                description: "Eco-friendly natural bamboo basket, perfect for home storage and decor. Crafted by local artisans.",
-                price: "₹850",
-                category: "Handicrafts",
-                quantity: "15",
-                image: "/product-pot.png"
-            });
-            setIsListening(false);
-            setFormSuccess("Voice details captured successfully! Please review and save.");
-            setTimeout(() => setFormSuccess(""), 3000);
-        }, 2500);
+        if (isListening) {
+            stopListening();
+            return;
+        }
+
+        startListening({
+            onResult: (text) => {
+                // Heuristic parsing: Name, Price, Category
+                // e.g. "Listing Bamboo Basket for 500 rupees in Handicrafts"
+                const parts = text.toLowerCase().split(" for ");
+                const namePart = parts[0]?.replace("listing ", "").trim();
+                const priceMatch = text.match(/(\d+)/);
+                const categoryMatch = CATEGORIES.find(c => text.toLowerCase().includes(c.toLowerCase()));
+
+                setForm(prev => ({
+                    ...prev,
+                    name: namePart ? namePart.charAt(0).toUpperCase() + namePart.slice(1) : prev.name,
+                    price: priceMatch ? `₹${priceMatch[0]}` : prev.price,
+                    category: categoryMatch || prev.category,
+                    description: `Captured by voice: "${text}"`
+                }));
+            },
+            onError: (err) => setFormError(`Voice Error: ${err}`)
+        });
     };
 
     const generateQR = (e: React.FormEvent) => {
@@ -196,7 +192,7 @@ export default function ShopkeeperDashboard() {
             title={NAV_ITEMS.find((n) => n.id === activeTab)?.label ?? "Dashboard"}
             subtitle={`${profile.shopName} — ${user.name}`}
             headerAction={
-                <button onClick={() => { setEditId(null); setForm(blankForm); setActiveTab("addproduct"); }} className="btn-primary py-2 px-4 text-sm">
+                <button onClick={() => { setEditId(null); setForm(blankForm); setActiveTab("addproduct"); }} className="btn-primary py-2 px-4 text-sm" title="Add new product">
                     <Plus size={15} aria-hidden="true" /> Add Product
                 </button>
             }
@@ -208,10 +204,10 @@ export default function ShopkeeperDashboard() {
                     <motion.div key="overview" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-8">
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                             {[
-                                { label: "My Products", value: products.length, color: "text-primary" },
-                                { label: "Active", value: products.filter(p => !p.isBanned).length, color: "text-success" },
+                                { label: "My Products", value: myProducts.length, color: "text-primary" },
+                                { label: "Active", value: myProducts.filter(p => !p.isBanned).length, color: "text-success" },
                                 { label: "Orders", value: myOrders.length, color: "text-secondary" },
-                                { label: "Revenue (est)", value: `₹${myOrders.filter(o => o.status === "paid").reduce((s, o) => s + parseInt(o.amount.replace(/\D/g, "")), 0)}`, color: "text-accent" },
+                                { label: "Revenue (est)", value: `₹${myOrders.filter(o => o.status === "paid").reduce((s, o) => s + parseInt(o.amount.replace(/\D/g, "")), 0).toLocaleString()}`, color: "text-accent" },
                             ].map((s, i) => (
                                 <motion.div key={s.label} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }} className="glass-card flex flex-col gap-1 p-5">
                                     <p className="text-xs font-semibold text-muted uppercase tracking-widest">{s.label}</p>
@@ -220,33 +216,41 @@ export default function ShopkeeperDashboard() {
                             ))}
                         </div>
 
-                        {/* Orders */}
+                        {/* Recent Transactions / Purchase Logs */}
                         <div className="glass-card p-0 overflow-hidden">
-                            <div className="px-6 py-4 border-b border-white/[0.05]">
-                                <h2 className="text-lg font-extrabold">My Orders</h2>
+                            <div className="px-6 py-4 border-b border-white/[0.05] flex justify-between items-center">
+                                <h2 className="text-lg font-extrabold">Recent Purchase Logs</h2>
+                                <span className="text-[10px] font-bold text-muted uppercase tracking-widest">Shared Transaction History</span>
                             </div>
                             {myOrders.length === 0 ? (
-                                <p className="text-muted text-center py-12">No orders yet.</p>
+                                <div className="py-20 flex flex-col items-center justify-center opacity-40">
+                                    <ShoppingCart size={48} className="mb-2" />
+                                    <p className="font-bold">No sales records found.</p>
+                                </div>
                             ) : (
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-sm">
                                         <thead>
                                             <tr className="border-b border-white/[0.05] bg-white/[0.02]">
-                                                {["Consumer", "Product", "Amount", "Status", "Date"].map(h => (
+                                                {["Buyer Details", "Product Sold", "Qty", "Amount", "Status", "Time & Date"].map(h => (
                                                     <th key={h} className="text-left px-6 py-3 text-xs font-bold text-muted uppercase tracking-wider">{h}</th>
                                                 ))}
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {myOrders.map((o) => (
-                                                <tr key={o.id} className="border-b border-white/[0.04] hover:bg-white/[0.02]">
-                                                    <td className="px-6 py-3 font-semibold">{o.consumerName}</td>
-                                                    <td className="px-6 py-3 text-muted">{o.productName}</td>
-                                                    <td className="px-6 py-3 font-bold text-primary">{o.amount}</td>
-                                                    <td className="px-6 py-3">
+                                                <tr key={o.id} className="border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors">
+                                                    <td className="px-6 py-4">
+                                                        <div className="font-bold text-foreground">{o.consumerName}</div>
+                                                        <div className="text-[10px] text-muted font-mono">#{o.consumerId}</div>
+                                                    </td>
+                                                    <td className="px-6 py-4 font-semibold text-primary">{o.productName}</td>
+                                                    <td className="px-6 py-4 text-muted font-bold">{o.quantity}</td>
+                                                    <td className="px-6 py-4 font-black text-secondary">{o.amount}</td>
+                                                    <td className="px-6 py-4">
                                                         <span className={`badge ${o.status === "paid" ? "badge-success" : "badge-warning"}`}>{o.status}</span>
                                                     </td>
-                                                    <td className="px-6 py-3 text-muted text-xs">{o.createdAt}</td>
+                                                    <td className="px-6 py-4 text-muted text-[11px] font-semibold leading-tight">{o.createdAt}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -260,17 +264,17 @@ export default function ShopkeeperDashboard() {
                 {/* ── PRODUCTS ── */}
                 {activeTab === "products" && (
                     <motion.div key="products" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-                        {products.length === 0 ? (
+                        {myProducts.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-24 gap-4">
                                 <Package size={56} className="text-white/10" aria-hidden="true" />
                                 <p className="text-muted text-lg">No products listed yet.</p>
-                                <button onClick={() => setActiveTab("addproduct")} className="btn-primary py-2 px-6 text-sm">
+                                <button onClick={() => setActiveTab("addproduct")} className="btn-primary py-2 px-6 text-sm" title="Add product">
                                     <Plus size={15} aria-hidden="true" /> Add First Product
                                 </button>
                             </div>
                         ) : (
                             <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-5">
-                                {products.map((p) => (
+                                {myProducts.map((p) => (
                                     <div key={p.id} className="glass-card flex flex-col p-0 overflow-hidden group">
                                         <div className="relative h-40 bg-surface overflow-hidden">
                                             <Image src={p.image ?? "/product-pot.png"} alt={p.name} fill className="object-cover group-hover:scale-105 transition-transform duration-500" sizes="33vw" />
@@ -289,10 +293,10 @@ export default function ShopkeeperDashboard() {
                                             <h3 className="font-bold">{p.name}</h3>
                                             <p className="text-muted text-sm line-clamp-2">{p.description}</p>
                                             <div className="flex gap-2 mt-auto pt-3">
-                                                <button onClick={() => startEdit(p)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold bg-primary/10 text-primary hover:bg-primary/20 transition-all" aria-label={`Edit ${p.name}`}>
+                                                <button onClick={() => startEdit(p)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold bg-primary/10 text-primary hover:bg-primary/20 transition-all" aria-label={`Edit ${p.name}`} title={`Edit ${p.name}`}>
                                                     <Edit2 size={13} aria-hidden="true" /> Edit
                                                 </button>
-                                                <button onClick={() => deleteProduct(p.id)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold bg-danger/10 text-danger hover:bg-danger/20 transition-all" aria-label={`Delete ${p.name}`}>
+                                                <button onClick={() => deleteProduct(p.id)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold bg-danger/10 text-danger hover:bg-danger/20 transition-all" aria-label={`Delete ${p.name}`} title={`Delete ${p.name}`}>
                                                     <Trash2 size={13} aria-hidden="true" /> Delete
                                                 </button>
                                             </div>
@@ -315,23 +319,23 @@ export default function ShopkeeperDashboard() {
                                 <button
                                     type="button"
                                     onClick={handleVoiceListing}
-                                    disabled={isListening}
                                     className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${isListening
-                                            ? "bg-primary text-white animate-pulse"
-                                            : "bg-primary/10 text-primary hover:bg-primary/20"
+                                        ? "bg-danger text-white animate-pulse"
+                                        : "bg-primary/10 text-primary hover:bg-primary/20"
                                         }`}
+                                    title={isListening ? "Stop listening" : "Start voice listing"}
                                 >
                                     <Mic size={16} className={isListening ? "animate-bounce" : ""} />
                                     {isListening ? "Listening..." : "List by Voice"}
                                 </button>
                             </div>
 
-                            {formError && (
-                                <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} className="flex items-start gap-3 p-4 rounded-xl bg-danger/10 border border-danger/30 text-danger text-sm mb-5" role="alert" aria-live="polite">
-                                    <AlertTriangle size={17} className="shrink-0 mt-0.5" aria-hidden="true" />
+                            {(formError || speechError) && (
+                                <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} className="flex items-start gap-4 p-4 rounded-xl bg-danger/10 border border-danger/30 text-danger text-sm mb-5" role="alert" aria-live="polite">
+                                    <AlertTriangle size={18} className="shrink-0 mt-0.5" aria-hidden="true" />
                                     <div>
-                                        <p className="font-bold">Product listing blocked due to suspicious content.</p>
-                                        <p className="mt-0.5 text-danger/80">{formError}</p>
+                                        <p className="font-bold">Error Encountered</p>
+                                        <p className="mt-0.5 opacity-90">{formError || speechError}</p>
                                     </div>
                                 </motion.div>
                             )}
@@ -372,10 +376,10 @@ export default function ShopkeeperDashboard() {
                                 </div>
 
                                 <div className="flex gap-3 pt-2">
-                                    <button type="submit" className="btn-primary flex-1 justify-center py-3">
+                                    <button type="submit" className="btn-primary flex-1 justify-center py-3" title="List your product">
                                         <Save size={16} aria-hidden="true" /> {editId ? "Save Changes" : "List Product"}
                                     </button>
-                                    <button type="button" onClick={() => { setActiveTab("products"); setForm(blankForm); setEditId(null); setFormError(""); }} className="btn-secondary py-3 px-5">
+                                    <button type="button" onClick={() => { setActiveTab("products"); setForm(blankForm); setEditId(null); setFormError(""); }} className="btn-secondary py-3 px-5" title="Cancel creation">
                                         <X size={16} aria-hidden="true" /> Cancel
                                     </button>
                                 </div>
@@ -405,7 +409,7 @@ export default function ShopkeeperDashboard() {
                                         <label htmlFor="qramt" className="text-xs font-bold text-muted uppercase tracking-widest">Amount *</label>
                                         <input id="qramt" type="text" required value={qrAmount} onChange={e => setQrAmount(e.target.value)} className="form-input text-xl font-bold" placeholder="₹500" />
                                     </div>
-                                    <button type="submit" className="btn-primary w-full justify-center py-3.5 text-base">
+                                    <button type="submit" className="btn-primary w-full justify-center py-3.5 text-base" title="Generate QR Code">
                                         <QrCode size={18} aria-hidden="true" /> Generate QR Code
                                     </button>
                                 </form>
@@ -420,7 +424,7 @@ export default function ShopkeeperDashboard() {
                                                 <div className="w-2 h-2 rounded-full bg-warning" aria-hidden="true" />
                                                 Waiting for payment…
                                             </div>
-                                            <button onClick={simulatePayment} className="btn-secondary w-full justify-center py-3 text-sm">
+                                            <button onClick={simulatePayment} className="btn-secondary w-full justify-center py-3 text-sm" title="Simulate consumer payment">
                                                 Simulate Consumer Payment ↗
                                             </button>
                                         </div>
@@ -431,7 +435,7 @@ export default function ShopkeeperDashboard() {
                                             </div>
                                             <p className="text-xl font-extrabold text-success">Payment Confirmed!</p>
                                             <p className="text-sm text-muted">{qrAmount} received successfully.</p>
-                                            <button onClick={() => { setQrGenerated(false); setQrPaid(false); setQrAmount("₹0"); }} className="btn-secondary py-2.5 px-6 text-sm mt-2">
+                                            <button onClick={() => { setQrGenerated(false); setQrPaid(false); setQrAmount("₹0"); }} className="btn-secondary py-2.5 px-6 text-sm mt-2" title="Create new payment">
                                                 New Payment
                                             </button>
                                         </motion.div>
@@ -452,7 +456,7 @@ export default function ShopkeeperDashboard() {
                                     <div className="flex items-center gap-2 p-3 rounded-xl bg-success/10 border border-success/30 text-success text-sm" role="status">
                                         <CheckCircle2 size={15} aria-hidden="true" /> {formSuccess}
                                     </div>
-                                )}
+                                ) || null}
                                 <div className="space-y-1.5">
                                     <label htmlFor="sname" className="text-xs font-bold text-muted uppercase tracking-widest">Shop Name</label>
                                     <input id="sname" type="text" value={profile.shopName} onChange={e => setProfile({ ...profile, shopName: e.target.value })} className="form-input" />
@@ -465,7 +469,7 @@ export default function ShopkeeperDashboard() {
                                     <label htmlFor="scontact" className="text-xs font-bold text-muted uppercase tracking-widest">Contact</label>
                                     <input id="scontact" type="text" value={profile.contact} onChange={e => setProfile({ ...profile, contact: e.target.value })} className="form-input" />
                                 </div>
-                                <button type="submit" className="btn-primary py-3 px-6">
+                                <button type="submit" className="btn-primary py-3 px-6" title="Save profile settings">
                                     <Save size={16} aria-hidden="true" /> Save Profile
                                 </button>
                             </form>
@@ -477,3 +481,10 @@ export default function ShopkeeperDashboard() {
         </DashboardShell>
     );
 }
+
+// Sub-components used
+const ShoppingCart = (props: any) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <circle cx="8" cy="21" r="1" /><circle cx="19" cy="21" r="1" /><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" />
+    </svg>
+);

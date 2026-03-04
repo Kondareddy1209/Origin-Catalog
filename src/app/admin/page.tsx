@@ -3,25 +3,27 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/lib/AuthContext";
+import { useData } from "@/lib/DataContext";
 import { useRouter } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
 import {
     Users, ShoppingBag, Package, ShoppingCart,
     CheckCircle2, XCircle, Eye, AlertTriangle,
-    Crown, LayoutDashboard, type LucideIcon
+    LayoutDashboard, type LucideIcon
 } from "lucide-react";
 import {
-    MOCK_USERS, MOCK_PRODUCTS, MOCK_ORDERS,
+    MOCK_USERS,
     type MockUser, type MockProduct,
 } from "@/lib/mockData";
 
-type Tab = "overview" | "shopkeepers" | "products" | "flagged";
+type Tab = "overview" | "shopkeepers" | "products" | "flagged" | "transactions";
 
 const NAV_ITEMS: { id: Tab; label: string; icon: LucideIcon }[] = [
     { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "shopkeepers", label: "Manage Shopkeepers", icon: Users },
     { id: "products", label: "Product Monitor", icon: Package },
     { id: "flagged", label: "Flagged Products", icon: AlertTriangle },
+    { id: "transactions", label: "Purchase Logs", icon: ShoppingCart },
 ];
 
 // ---------------------------------------------------------------
@@ -63,22 +65,22 @@ function StatusBadge({ status }: { status: string }) {
 // ADMIN DASHBOARD PAGE
 // ---------------------------------------------------------------
 export default function AdminDashboard() {
-    const { user, isAuthenticated, isLoading } = useAuth();
+    const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+    const { products, orders, updateProduct, deleteProduct } = useData();
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<Tab>("overview");
     const [shopkeepers, setShopkeepers] = useState<MockUser[]>(
         MOCK_USERS.filter((u) => u.role === "shopkeeper")
     );
-    const [products, setProducts] = useState<MockProduct[]>(MOCK_PRODUCTS);
     const [selectedProduct, setSelectedProduct] = useState<MockProduct | null>(null);
 
     useEffect(() => {
-        if (!isLoading && (!isAuthenticated || user?.role !== "admin")) {
+        if (!authLoading && (!isAuthenticated || user?.role !== "admin")) {
             router.replace("/login");
         }
-    }, [isLoading, isAuthenticated, user, router]);
+    }, [authLoading, isAuthenticated, user, router]);
 
-    if (isLoading || !user) {
+    if (authLoading || !user) {
         return (
             <div className="min-h-screen bg-background flex items-center justify-center">
                 <div className="w-10 h-10 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -99,21 +101,19 @@ export default function AdminDashboard() {
     };
 
     const removeProduct = (id: string) => {
-        setProducts((prev) => prev.filter((p) => p.id !== id));
+        deleteProduct(id);
         if (selectedProduct?.id === id) setSelectedProduct(null);
     };
 
     const approveProduct = (id: string) => {
-        setProducts((prev) =>
-            prev.map((p) => p.id === id ? { ...p, isScam: false, isBanned: false, status: "active" } : p)
-        );
+        updateProduct(id, { isScam: false, isBanned: false, status: "active" });
     };
 
     const stats = [
         { label: "Total Shopkeepers", value: shopkeepers.length, icon: ShoppingBag, color: "text-primary" },
         { label: "Total Consumers", value: consumers.length, icon: Users, color: "text-secondary" },
         { label: "Total Products", value: products.length, icon: Package, color: "text-accent" },
-        { label: "Total Orders", value: MOCK_ORDERS.length, icon: ShoppingCart, color: "text-success" },
+        { label: "Total Orders", value: orders.length, icon: ShoppingCart, color: "text-success" },
     ];
 
     return (
@@ -137,42 +137,42 @@ export default function AdminDashboard() {
                             ))}
                         </div>
 
-                        {/* Flagged alert */}
+                        {/* Recent alert */}
                         {flagged.length > 0 && (
                             <div className="glass-card p-5 border-danger/20 bg-danger/5 flex items-start gap-4 mb-6">
                                 <AlertTriangle size={22} className="text-danger shrink-0 mt-0.5" aria-hidden="true" />
                                 <div>
-                                    <p className="font-bold text-danger">Flagged Products Alert</p>
+                                    <p className="font-bold text-danger">Safety Alert</p>
                                     <p className="text-sm text-muted mt-0.5">
-                                        {flagged.length} product{flagged.length > 1 ? "s" : ""} flagged for suspicious content.{" "}
-                                        <button onClick={() => setActiveTab("flagged")} className="text-primary font-semibold underline underline-offset-2">Review now →</button>
+                                        {flagged.length} item{flagged.length > 1 ? "s" : ""} flagged by the Scam Engine. Review as soon as possible.
                                     </p>
                                 </div>
                             </div>
                         )}
 
-                        {/* Recent orders */}
+                        {/* Recent transactions summary */}
                         <div className="glass-card p-0 overflow-hidden">
-                            <div className="px-6 py-4 border-b border-white/[0.05]">
-                                <h2 className="text-lg font-extrabold">Recent Orders</h2>
+                            <div className="px-6 py-4 border-b border-white/[0.05] flex justify-between items-center">
+                                <h2 className="text-lg font-extrabold">Recent Platform Activity</h2>
+                                <button onClick={() => setActiveTab("transactions")} className="text-xs font-bold text-primary hover:underline">View All Logs →</button>
                             </div>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm">
                                     <thead>
                                         <tr className="border-b border-white/[0.05] bg-white/[0.02]">
-                                            {["Order ID", "Consumer", "Product", "Amount", "Status"].map((h) => (
+                                            {["Customer", "Product", "Shop", "Amount", "Time"].map((h) => (
                                                 <th key={h} className="text-left px-6 py-3 text-xs font-bold text-muted uppercase tracking-wider">{h}</th>
                                             ))}
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {MOCK_ORDERS.map((o) => (
+                                        {orders.slice(0, 5).map((o) => (
                                             <tr key={o.id} className="border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors">
-                                                <td className="px-6 py-3 font-mono text-xs text-muted">{o.id}</td>
                                                 <td className="px-6 py-3 font-semibold">{o.consumerName}</td>
-                                                <td className="px-6 py-3 text-muted">{o.productName}</td>
-                                                <td className="px-6 py-3 font-bold text-primary">{o.amount}</td>
-                                                <td className="px-6 py-3"><StatusBadge status={o.status} /></td>
+                                                <td className="px-6 py-3 text-primary font-bold">{o.productName}</td>
+                                                <td className="px-6 py-3 italic text-muted text-xs">{o.shopName}</td>
+                                                <td className="px-6 py-3 font-bold text-secondary">{o.amount}</td>
+                                                <td className="px-6 py-3 text-muted text-[10px] uppercase font-bold">{o.createdAt}</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -187,8 +187,8 @@ export default function AdminDashboard() {
                     <motion.div key="shopkeepers" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
                         <div className="glass-card p-0 overflow-hidden">
                             <div className="px-6 py-4 border-b border-white/[0.05] flex justify-between items-center">
-                                <h2 className="text-lg font-extrabold">All Shopkeepers</h2>
-                                <span className="badge badge-primary">{shopkeepers.length} total</span>
+                                <h2 className="text-lg font-extrabold">Account Monitoring</h2>
+                                <span className="badge badge-primary">{shopkeepers.length} retailers</span>
                             </div>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm">
@@ -207,21 +207,16 @@ export default function AdminDashboard() {
                                                 <td className="px-6 py-4"><StatusBadge status={s.status} /></td>
                                                 <td className="px-6 py-4 text-muted text-xs">{s.createdAt}</td>
                                                 <td className="px-6 py-4">
-                                                    <div className="flex gap-2">
-                                                        <button
-                                                            onClick={() => toggleAccountStatus(s.id)}
-                                                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${s.status === "active"
-                                                                    ? "bg-danger/10 text-danger hover:bg-danger/20"
-                                                                    : "bg-success/10 text-success hover:bg-success/20"
-                                                                }`}
-                                                            aria-label={s.status === "active" ? `Suspend ${s.name}` : `Approve ${s.name}`}
-                                                        >
-                                                            {s.status === "active"
-                                                                ? <><XCircle size={13} aria-hidden="true" /> Suspend</>
-                                                                : <><CheckCircle2 size={13} aria-hidden="true" /> Approve</>
-                                                            }
-                                                        </button>
-                                                    </div>
+                                                    <button
+                                                        onClick={() => toggleAccountStatus(s.id)}
+                                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${s.status === "active"
+                                                            ? "bg-danger/10 text-danger hover:bg-danger/20"
+                                                            : "bg-success/10 text-success hover:bg-success/20"
+                                                            }`}
+                                                        title={s.status === "active" ? "Block Access" : "Grant Access"}
+                                                    >
+                                                        {s.status === "active" ? "Suspend" : "Approve"}
+                                                    </button>
                                                 </td>
                                             </tr>
                                         ))}
@@ -237,21 +232,21 @@ export default function AdminDashboard() {
                     <motion.div key="products" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
                         <div className="glass-card p-0 overflow-hidden">
                             <div className="px-6 py-4 border-b border-white/[0.05] flex justify-between items-center">
-                                <h2 className="text-lg font-extrabold">All Product Listings</h2>
-                                <span className="badge badge-primary">{activeProducts.length} active</span>
+                                <h2 className="text-lg font-extrabold">Product Inventory Audit</h2>
+                                <span className="badge badge-primary">{activeProducts.length} verified listings</span>
                             </div>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm">
                                     <thead>
                                         <tr className="border-b border-white/[0.05] bg-white/[0.02]">
-                                            {["Product", "Shop", "Category", "Price", "Qty", "Status", "Actions"].map((h) => (
+                                            {["Listing", "Shop", "Category", "Price", "Qty", "Flags", "Actions"].map((h) => (
                                                 <th key={h} className="text-left px-5 py-3 text-xs font-bold text-muted uppercase tracking-wider">{h}</th>
                                             ))}
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {products.map((p) => (
-                                            <tr key={p.id} className={`border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors ${p.isBanned ? "opacity-60" : ""}`}>
+                                            <tr key={p.id} className={`border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors ${p.isBanned ? "opacity-60 bg-danger/[0.02]" : ""}`}>
                                                 <td className="px-5 py-4 font-semibold max-w-[180px] truncate">{p.name}</td>
                                                 <td className="px-5 py-4 text-muted text-xs">{p.shopName}</td>
                                                 <td className="px-5 py-4 text-muted">{p.category}</td>
@@ -262,20 +257,8 @@ export default function AdminDashboard() {
                                                 </td>
                                                 <td className="px-5 py-4">
                                                     <div className="flex gap-2">
-                                                        <button
-                                                            onClick={() => setSelectedProduct(p)}
-                                                            className="p-1.5 rounded-lg bg-white/5 text-muted hover:text-primary transition-colors"
-                                                            aria-label={`View ${p.name}`}
-                                                        >
-                                                            <Eye size={14} aria-hidden="true" />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => removeProduct(p.id)}
-                                                            className="p-1.5 rounded-lg bg-danger/5 text-danger hover:bg-danger/15 transition-colors"
-                                                            aria-label={`Remove ${p.name}`}
-                                                        >
-                                                            <XCircle size={14} aria-hidden="true" />
-                                                        </button>
+                                                        <button onClick={() => setSelectedProduct(p)} className="p-1.5 rounded-lg bg-white/5 text-muted hover:text-primary" title="Details"><Eye size={14} /></button>
+                                                        <button onClick={() => removeProduct(p.id)} className="p-1.5 rounded-lg bg-danger/5 text-danger hover:bg-danger/15" title="Remove Listing"><XCircle size={14} /></button>
                                                     </div>
                                                 </td>
                                             </tr>
@@ -284,41 +267,59 @@ export default function AdminDashboard() {
                                 </table>
                             </div>
                         </div>
+                    </motion.div>
+                )}
 
-                        {/* Product detail modal */}
-                        <AnimatePresence>
-                            {selectedProduct && (
-                                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" aria-modal="true" role="dialog" aria-label="Product details">
-                                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedProduct(null)} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-                                    <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="glass-card max-w-md w-full p-8 relative z-10 overflow-hidden">
-                                        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-primary to-transparent" />
-                                        <h3 className="text-xl font-extrabold mb-4">{selectedProduct.name}</h3>
-                                        <div className="space-y-3 text-sm">
-                                            {[
-                                                ["Shop", selectedProduct.shopName],
-                                                ["Category", selectedProduct.category],
-                                                ["Price", selectedProduct.price],
-                                                ["Quantity", String(selectedProduct.quantity)],
-                                                ["Status", selectedProduct.isBanned ? "🚫 Flagged" : "✅ Active"],
-                                            ].map(([k, v]) => (
-                                                <div key={k} className="flex justify-between">
-                                                    <span className="text-muted font-semibold">{k}</span>
-                                                    <span className="font-bold">{v}</span>
-                                                </div>
-                                            ))}
-                                            <div>
-                                                <p className="text-muted font-semibold mb-1">Description</p>
-                                                <p className="text-foreground/80 leading-relaxed">{selectedProduct.description}</p>
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-3 mt-6">
-                                            <button onClick={() => setSelectedProduct(null)} className="btn-secondary flex-1 justify-center py-2.5 text-sm">Close</button>
-                                            <button onClick={() => removeProduct(selectedProduct.id)} className="flex-1 py-2.5 px-4 rounded-xl text-sm font-bold text-danger border border-danger/30 hover:bg-danger/10 transition-all">Remove Listing</button>
-                                        </div>
-                                    </motion.div>
+                {/* ── TRANSACTIONS ── */}
+                {activeTab === "transactions" && (
+                    <motion.div key="transactions" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+                        <div className="glass-card p-0 overflow-hidden">
+                            <div className="px-6 py-4 border-b border-white/[0.05] flex justify-between items-center bg-white/[0.02]">
+                                <div>
+                                    <h2 className="text-xl font-black">Global Purchase Logs</h2>
+                                    <p className="text-xs text-muted font-bold uppercase tracking-widest mt-1">Universal Transaction Audit Trail</p>
                                 </div>
-                            )}
-                        </AnimatePresence>
+                                <div className="text-right">
+                                    <span className="text-2xl font-black text-secondary">₹{orders.reduce((s, o) => s + parseInt(o.amount.replace(/\D/g, "") || "0"), 0).toLocaleString()}</span>
+                                    <p className="text-[10px] text-muted font-bold uppercase tracking-tighter">Platform Gross Value</p>
+                                </div>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="border-b border-white/[0.05] bg-black/20">
+                                            {["Order ID", "Customer Details", "Product & Shop", "Qty", "Amount", "Status", "Time & Date"].map((h) => (
+                                                <th key={h} className="text-left px-6 py-4 text-[10px] font-black text-muted uppercase tracking-[0.2em]">{h}</th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {orders.map((o) => (
+                                            <tr key={o.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-all">
+                                                <td className="px-6 py-4 font-mono text-[10px] text-muted">#{o.id.slice(-8)}</td>
+                                                <td className="px-6 py-4">
+                                                    <div className="font-extrabold text-foreground">{o.consumerName}</div>
+                                                    <div className="text-[10px] text-muted font-mono">{o.consumerId}</div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="font-bold text-primary">{o.productName}</div>
+                                                    <div className="text-[10px] text-muted italic">Store: {o.shopName}</div>
+                                                </td>
+                                                <td className="px-6 py-4 font-black">{o.quantity}</td>
+                                                <td className="px-6 py-4 font-black text-secondary">{o.amount}</td>
+                                                <td className="px-6 py-4"><StatusBadge status={o.status} /></td>
+                                                <td className="px-6 py-4 text-[10px] font-bold text-muted leading-tight">{o.createdAt}</td>
+                                            </tr>
+                                        ))}
+                                        {orders.length === 0 && (
+                                            <tr>
+                                                <td colSpan={7} className="px-6 py-20 text-center opacity-40 font-bold italic">No platform transactions recorded.</td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </motion.div>
                 )}
 
@@ -326,52 +327,62 @@ export default function AdminDashboard() {
                 {activeTab === "flagged" && (
                     <motion.div key="flagged" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
                         {flagged.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center py-24 gap-4">
-                                <CheckCircle2 size={56} className="text-success/40" aria-hidden="true" />
-                                <p className="text-muted text-lg font-semibold">No flagged products. Platform is clean ✓</p>
+                            <div className="flex flex-col items-center justify-center py-24 gap-4 opacity-50">
+                                <CheckCircle2 size={56} className="text-success" />
+                                <p className="text-muted text-lg font-semibold tracking-wide">Infrastructure Secure: Zero Threats Detected</p>
                             </div>
                         ) : (
-                            <div className="space-y-5">
-                                <div className="flex items-center gap-3 p-4 glass-card border-danger/20 bg-danger/5">
-                                    <AlertTriangle size={20} className="text-danger shrink-0" aria-hidden="true" />
-                                    <p className="text-sm text-muted">
-                                        Products below were automatically flagged by our scam detection system. Review and approve or permanently remove them.
-                                    </p>
-                                </div>
+                            <div className="grid gap-4">
                                 {flagged.map((p) => (
-                                    <div key={p.id} className="glass-card border-danger/20 bg-danger/[0.03] p-6 flex flex-col sm:flex-row gap-5 justify-between">
+                                    <div key={p.id} className="glass-card border-danger/30 bg-danger/[0.02] p-6 flex flex-col md:flex-row gap-6 items-start justify-between">
                                         <div className="flex-1">
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <span className="badge bg-danger/15 text-danger border-danger/30">🚫 Scam Detected</span>
-                                                <span className="text-xs text-muted">{p.shopName}</span>
+                                            <div className="flex items-center gap-2 mb-3">
+                                                <span className="badge bg-danger text-white border-none text-[10px] font-black uppercase">Scam Alert</span>
+                                                <span className="text-xs font-mono text-muted">{p.id}</span>
                                             </div>
-                                            <h3 className="text-lg font-bold mb-1">{p.name}</h3>
-                                            <p className="text-sm text-muted leading-relaxed">{p.description}</p>
-                                            <p className="text-xs text-danger/70 mt-2 font-semibold">
-                                                Reason: Suspicious keywords detected in listing
-                                            </p>
+                                            <h3 className="text-xl font-black mb-2">{p.name}</h3>
+                                            <p className="text-sm text-muted leading-relaxed line-clamp-3 mb-3">{p.description}</p>
+                                            <div className="flex gap-4 text-[10px] font-bold text-muted uppercase">
+                                                <span>Shop: {p.shopName}</span>
+                                                <span>Vendor ID: {p.shopkeeperId}</span>
+                                            </div>
                                         </div>
-                                        <div className="flex sm:flex-col gap-2 sm:gap-3 shrink-0">
-                                            <button
-                                                onClick={() => approveProduct(p.id)}
-                                                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold bg-success/10 text-success hover:bg-success/20 transition-all"
-                                                aria-label={`Approve ${p.name}`}
-                                            >
-                                                <CheckCircle2 size={14} aria-hidden="true" /> Approve
-                                            </button>
-                                            <button
-                                                onClick={() => removeProduct(p.id)}
-                                                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold bg-danger/10 text-danger hover:bg-danger/20 transition-all"
-                                                aria-label={`Remove ${p.name}`}
-                                            >
-                                                <XCircle size={14} aria-hidden="true" /> Remove
-                                            </button>
+                                        <div className="flex md:flex-col gap-2 shrink-0">
+                                            <button onClick={() => approveProduct(p.id)} className="px-6 py-3 rounded-xl text-xs font-black bg-success/10 text-success hover:bg-success hover:text-white transition-all">APPROVE</button>
+                                            <button onClick={() => removeProduct(p.id)} className="px-6 py-3 rounded-xl text-xs font-black bg-danger/10 text-danger hover:bg-danger hover:text-white transition-all">TERMINATE</button>
                                         </div>
                                     </div>
                                 ))}
                             </div>
                         )}
                     </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Product detail modal */}
+            <AnimatePresence>
+                {selectedProduct && (
+                    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedProduct(null)} className="absolute inset-0 bg-black/80 backdrop-blur-md" />
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="glass-card max-w-lg w-full p-10 relative z-10">
+                            <h3 className="text-2xl font-black mb-6">{selectedProduct.name}</h3>
+                            <div className="space-y-4 text-sm mb-8">
+                                {[
+                                    ["Origin Store", selectedProduct.shopName],
+                                    ["Category", selectedProduct.category],
+                                    ["Market Price", selectedProduct.price],
+                                    ["Current Stock", String(selectedProduct.quantity)],
+                                    ["Safety Status", selectedProduct.isBanned ? "FLAGGED FOR REVIEW" : "VERIFIED ACTIVE"],
+                                ].map(([k, v]) => (
+                                    <div key={k} className="flex justify-between border-b border-white/5 pb-2">
+                                        <span className="text-muted font-bold uppercase text-[10px] tracking-widest">{k}</span>
+                                        <span className="font-extrabold">{v}</span>
+                                    </div>
+                                ))}
+                            </div>
+                            <button onClick={() => setSelectedProduct(null)} className="btn-primary w-full justify-center py-4">Exit Investigation</button>
+                        </motion.div>
+                    </div>
                 )}
             </AnimatePresence>
         </DashboardShell>

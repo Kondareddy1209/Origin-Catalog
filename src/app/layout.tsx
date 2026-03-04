@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/lib/AuthContext";
+import { DataProvider } from "@/lib/DataContext";
 
 export const metadata: Metadata = {
   title: "CatalogBuddy | Voice-First AI Catalog Platform for Small Vendors",
@@ -14,8 +15,6 @@ export const metadata: Metadata = {
     "inclusitve commerce",
     "digital listings",
     "offline sync",
-    "rural vendors",
-    "inclusitve commerce",
     "rural vendors",
   ],
   openGraph: {
@@ -44,13 +43,17 @@ export default function RootLayout({
         <meta httpEquiv="Referrer-Policy" content="strict-origin-when-cross-origin" />
         <meta
           httpEquiv="Permissions-Policy"
-          content="camera=(), microphone=(), geolocation=()"
+          content="camera=(self), microphone=(self), geolocation=()"
         />
         {/* Prevent caching of sensitive pages */}
         <meta httpEquiv="Cache-Control" content="no-store" />
       </head>
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <DataProvider>
+            {children}
+          </DataProvider>
+        </AuthProvider>
       </body>
     </html>
   );

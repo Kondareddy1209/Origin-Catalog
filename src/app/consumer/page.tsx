@@ -3,14 +3,16 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/lib/AuthContext";
+import { useData } from "@/lib/DataContext";
+import { useSpeechRecognition } from "@/lib/useSpeechRecognition";
 import { useRouter } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
 import {
-    ShoppingBag, Package, ShoppingCart, User, Mic,
-    Search, Filter, CheckCircle2, QrCode, X,
-    AlertTriangle, ArrowRight, Wallet, Trash2, Plus, Minus, type LucideIcon
+    ShoppingBag, ShoppingCart, User, Mic,
+    Search, Filter, CheckCircle2, X,
+    AlertTriangle, ArrowRight, Trash2, Plus, Minus, type LucideIcon
 } from "lucide-react";
-import { MOCK_PRODUCTS, MOCK_ORDERS, type MockProduct, type MockOrder } from "@/lib/mockData";
+import { type MockProduct } from "@/lib/mockData";
 import Image from "next/image";
 
 type Tab = "marketplace" | "orders" | "profile";
@@ -29,18 +31,14 @@ interface CartItem extends MockProduct {
 // CONSUMER DASHBOARD
 // ---------------------------------------------------------------
 export default function ConsumerDashboard() {
-    const { user, isAuthenticated, isLoading } = useAuth();
+    const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+    const { products, orders, placeOrder } = useData();
+    const { isListening, startListening, stopListening, error: speechError } = useSpeechRecognition();
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<Tab>("marketplace");
 
     // State
-    const [products] = useState<MockProduct[]>(MOCK_PRODUCTS);
-    const [orders, setOrders] = useState<MockOrder[]>(
-        MOCK_ORDERS.filter((o) => o.consumerId === "u4") // Priya's orders for demo
-    );
-
     const [searchQuery, setSearchQuery] = useState("");
-    const [isListening, setIsListening] = useState(false);
 
     // Cart logic
     const [cart, setCart] = useState<CartItem[]>([]);
@@ -50,14 +48,15 @@ export default function ConsumerDashboard() {
     const [selectedProduct, setSelectedProduct] = useState<MockProduct | null>(null);
     const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
     const [purchaseStep, setPurchaseStep] = useState<"detail" | "cart" | "payment" | "success">("detail");
+    const [isProcessing, setIsProcessing] = useState(false);
 
     useEffect(() => {
-        if (!isLoading && (!isAuthenticated || user?.role !== "consumer")) {
+        if (!authLoading && (!isAuthenticated || user?.role !== "consumer")) {
             router.replace("/login");
         }
-    }, [isLoading, isAuthenticated, user, router]);
+    }, [authLoading, isAuthenticated, user, router]);
 
-    if (isLoading || !user) {
+    if (authLoading || !user) {
         return (
             <div className="min-h-screen bg-background flex items-center justify-center">
                 <div className="w-10 h-10 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -70,13 +69,19 @@ export default function ConsumerDashboard() {
         return p.name.toLowerCase().includes(q) || p.shopName.toLowerCase().includes(q);
     });
 
-    // Voice search simulation
+    const myOrders = orders.filter((o) => o.consumerId === user.id);
+
+    // Voice search
     const handleVoiceSearch = () => {
-        setIsListening(true);
-        setTimeout(() => {
-            setSearchQuery("Handicrafts");
-            setIsListening(false);
-        }, 1500);
+        if (isListening) {
+            stopListening();
+            return;
+        }
+
+        startListening({
+            onResult: (text) => setSearchQuery(text),
+            onError: (err) => console.error(err)
+        });
     };
 
     // Cart handlers
@@ -107,30 +112,26 @@ export default function ConsumerDashboard() {
         return acc + (priceNum * item.cartQuantity);
     }, 0);
 
-    const handleCheckout = () => {
-        setPurchaseStep("payment");
-        setIsPurchaseModalOpen(true);
-    };
-
     const finalizePayment = () => {
+        setIsProcessing(true);
         // Simulate payment processing
         setTimeout(() => {
-            const newOrders: MockOrder[] = cart.map(item => ({
-                id: `o${Date.now()}-${item.id}`,
+            const orderPayload = cart.map(item => ({
                 consumerId: user.id,
                 consumerName: user.name,
                 shopkeeperId: item.shopkeeperId,
+                shopName: item.shopName,
                 productId: item.id,
                 productName: item.name,
-                amount: item.price,
-                status: "paid",
-                createdAt: new Date().toISOString().split("T")[0],
+                quantity: item.cartQuantity,
+                amount: `₹${(parseFloat(item.price.replace(/[^0-9.]/g, "")) * item.cartQuantity).toLocaleString()}`,
             }));
 
-            setOrders(prev => [...newOrders, ...prev]);
+            placeOrder(orderPayload);
             setCart([]);
+            setIsProcessing(false);
             setPurchaseStep("success");
-        }, 2000);
+        }, 1500);
     };
 
     return (
@@ -145,6 +146,7 @@ export default function ConsumerDashboard() {
                 <button
                     onClick={() => setIsCartOpen(true)}
                     className="relative p-2.5 rounded-xl bg-surface border border-white/5 text-muted hover:text-foreground transition-all"
+                    title="View Shopping Cart"
                 >
                     <ShoppingCart size={18} />
                     {cart.length > 0 && (
@@ -176,12 +178,12 @@ export default function ConsumerDashboard() {
                                     onClick={handleVoiceSearch}
                                     className={`absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-all ${isListening ? "bg-primary text-white animate-pulse" : "text-muted hover:text-primary"
                                         }`}
-                                    title="Search by Voice"
+                                    title={isListening ? "Stop listening" : "Search by Voice"}
                                 >
                                     <Mic size={18} className={isListening ? "animate-bounce" : ""} />
                                 </button>
                             </div>
-                            <button className="p-3 bg-surface border border-white/5 rounded-xl text-muted hover:text-foreground transition-all">
+                            <button className="p-3 bg-surface border border-white/5 rounded-xl text-muted hover:text-foreground transition-all" title="Filter products">
                                 <Filter size={20} />
                             </button>
                         </div>
@@ -200,6 +202,7 @@ export default function ConsumerDashboard() {
                                             alt={p.name}
                                             fill
                                             className="object-cover group-hover:scale-105 transition-transform duration-500"
+                                            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
                                         />
                                         <div className="absolute inset-0 bg-gradient-to-t from-background/80 via-transparent to-transparent" />
 
@@ -230,6 +233,7 @@ export default function ConsumerDashboard() {
                                                     setIsPurchaseModalOpen(true);
                                                 }}
                                                 className="flex-1 py-1.5 rounded-lg border border-white/10 text-[10px] font-bold text-muted hover:text-foreground transition-all uppercase tracking-wider"
+                                                title={`View details for ${p.name}`}
                                             >
                                                 Details
                                             </button>
@@ -237,9 +241,10 @@ export default function ConsumerDashboard() {
                                                 onClick={() => addToCart(p)}
                                                 disabled={p.isBanned}
                                                 className={`flex-[2] py-1.5 rounded-lg font-bold text-xs flex items-center justify-center gap-2 transition-all ${p.isBanned
-                                                        ? 'bg-white/5 text-muted cursor-not-allowed'
-                                                        : 'bg-primary/10 text-primary hover:bg-primary hover:text-white'
+                                                    ? 'bg-white/5 text-muted cursor-not-allowed'
+                                                    : 'bg-primary/10 text-primary hover:bg-primary hover:text-white'
                                                     }`}
+                                                title={`Add ${p.name} to cart`}
                                             >
                                                 <Plus size={14} /> Add to Cart
                                             </button>
@@ -264,26 +269,30 @@ export default function ConsumerDashboard() {
                                         <tr className="border-b border-white/[0.05] bg-white/[0.02]">
                                             <th className="text-left px-6 py-3 text-xs font-bold text-muted uppercase tracking-wider">Order ID</th>
                                             <th className="text-left px-6 py-3 text-xs font-bold text-muted uppercase tracking-wider">Product</th>
+                                            <th className="text-left px-6 py-3 text-xs font-bold text-muted uppercase tracking-wider">Shop</th>
+                                            <th className="text-left px-6 py-3 text-xs font-bold text-muted uppercase tracking-wider">Qty</th>
                                             <th className="text-left px-6 py-3 text-xs font-bold text-muted uppercase tracking-wider">Amount</th>
                                             <th className="text-left px-6 py-3 text-xs font-bold text-muted uppercase tracking-wider">Status</th>
-                                            <th className="text-left px-6 py-3 text-xs font-bold text-muted uppercase tracking-wider">Date</th>
+                                            <th className="text-left px-6 py-3 text-xs font-bold text-muted uppercase tracking-wider">Date & Time</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {orders.map((o) => (
-                                            <tr key={o.id} className="border-b border-white/[0.04]">
-                                                <td className="px-6 py-4 font-mono text-xs text-muted">#{o.id.split('-')[0].slice(-6)}</td>
+                                        {myOrders.map((o) => (
+                                            <tr key={o.id} className="border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors">
+                                                <td className="px-6 py-4 font-mono text-[10px] text-muted">#{o.id.slice(-8)}</td>
                                                 <td className="px-6 py-4 font-semibold">{o.productName}</td>
+                                                <td className="px-6 py-4 italic text-muted text-xs">{o.shopName}</td>
+                                                <td className="px-6 py-4 font-bold">{o.quantity}</td>
                                                 <td className="px-6 py-4 font-bold text-secondary">{o.amount}</td>
                                                 <td className="px-6 py-4">
-                                                    <span className="badge badge-success">{o.status}</span>
+                                                    <span className={`badge ${o.status === "paid" ? "badge-success" : "badge-warning"}`}>{o.status}</span>
                                                 </td>
-                                                <td className="px-6 py-4 text-muted text-xs">{o.createdAt}</td>
+                                                <td className="px-6 py-4 text-muted text-xs leading-tight">{o.createdAt}</td>
                                             </tr>
                                         ))}
-                                        {orders.length === 0 && (
+                                        {myOrders.length === 0 && (
                                             <tr>
-                                                <td colSpan={5} className="px-6 py-12 text-center text-muted">No purchases found.</td>
+                                                <td colSpan={7} className="px-6 py-12 text-center text-muted">No purchases found.</td>
                                             </tr>
                                         )}
                                     </tbody>
@@ -313,9 +322,9 @@ export default function ConsumerDashboard() {
                                 </div>
                                 <div>
                                     <label className="text-xs font-bold text-muted uppercase tracking-widest block mb-2">Total Purchases</label>
-                                    <p className="text-foreground font-semibold">{orders.length} items</p>
+                                    <p className="text-foreground font-semibold">{myOrders.length} items</p>
                                 </div>
-                                <button className="btn-secondary py-3 px-6 text-sm">Edit Profile Settings</button>
+                                <button className="btn-secondary py-3 px-6 text-sm" title="Edit profile settings">Edit Profile Settings</button>
                             </div>
                         </div>
                     </motion.div>
@@ -342,7 +351,7 @@ export default function ConsumerDashboard() {
                                     <ShoppingCart size={20} className="text-primary" />
                                     <h2 className="text-xl font-extrabold">My Cart</h2>
                                 </div>
-                                <button onClick={() => setIsCartOpen(false)} className="p-2 rounded-xl hover:bg-white/5 text-muted">
+                                <button onClick={() => setIsCartOpen(false)} className="p-2 rounded-xl hover:bg-white/5 text-muted" title="Close cart">
                                     <X size={20} />
                                 </button>
                             </div>
@@ -352,27 +361,27 @@ export default function ConsumerDashboard() {
                                     <div className="h-full flex flex-col items-center justify-center gap-4 text-center opacity-50">
                                         <ShoppingCart size={48} />
                                         <p className="text-lg font-bold">Your cart is empty</p>
-                                        <button onClick={() => setIsCartOpen(false)} className="btn-primary py-2 px-6 text-sm">Start Shopping</button>
+                                        <button onClick={() => setIsCartOpen(false)} className="btn-primary py-2 px-6 text-sm" title="Start shopping">Start Shopping</button>
                                     </div>
                                 ) : (
                                     cart.map(item => (
                                         <div key={item.id} className="flex gap-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5">
                                             <div className="relative w-20 h-20 rounded-xl overflow-hidden shrink-0">
-                                                <Image src={item.image || "/product-pot.png"} alt={item.name} fill className="object-cover" />
+                                                <Image src={item.image || "/product-pot.png"} alt={item.name} fill className="object-cover" sizes="80px" />
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex justify-between items-start">
                                                     <h3 className="font-bold text-sm truncate">{item.name}</h3>
-                                                    <button onClick={() => removeFromCart(item.id)} className="text-muted hover:text-danger">
+                                                    <button onClick={() => removeFromCart(item.id)} className="text-muted hover:text-danger" title={`Remove ${item.name} from cart`}>
                                                         <Trash2 size={14} />
                                                     </button>
                                                 </div>
                                                 <p className="text-xs text-muted mb-2">By {item.shopName}</p>
                                                 <div className="flex justify-between items-center">
                                                     <div className="flex items-center gap-2 bg-black/20 rounded-lg p-1">
-                                                        <button onClick={() => updateCartQty(item.id, -1)} className="p-1 hover:bg-white/10 rounded-md"><Minus size={12} /></button>
+                                                        <button onClick={() => updateCartQty(item.id, -1)} className="p-1 hover:bg-white/10 rounded-md" title="Decrease quantity"><Minus size={12} /></button>
                                                         <span className="text-xs font-bold w-4 text-center">{item.cartQuantity}</span>
-                                                        <button onClick={() => updateCartQty(item.id, 1)} className="p-1 hover:bg-white/10 rounded-md"><Plus size={12} /></button>
+                                                        <button onClick={() => updateCartQty(item.id, 1)} className="p-1 hover:bg-white/10 rounded-md" title="Increase quantity"><Plus size={12} /></button>
                                                     </div>
                                                     <span className="font-extrabold text-secondary">{item.price}</span>
                                                 </div>
@@ -389,8 +398,9 @@ export default function ConsumerDashboard() {
                                         <span className="text-2xl font-black text-secondary">₹{cartTotalNum.toLocaleString()}</span>
                                     </div>
                                     <button
-                                        onClick={handleCheckout}
+                                        onClick={() => { setPurchaseStep("payment"); setIsPurchaseModalOpen(true); }}
                                         className="btn-primary w-full justify-center py-4 text-base"
+                                        title="Proceed to checkout"
                                     >
                                         Proceed to Checkout <ArrowRight size={18} />
                                     </button>
@@ -407,7 +417,7 @@ export default function ConsumerDashboard() {
                     <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
                         <motion.div
                             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                            onClick={() => setIsPurchaseModalOpen(false)}
+                            onClick={() => !isProcessing && setIsPurchaseModalOpen(false)}
                             className="absolute inset-0 bg-black/90 backdrop-blur-md"
                         />
 
@@ -417,10 +427,11 @@ export default function ConsumerDashboard() {
                             exit={{ opacity: 0, scale: 0.95, y: 20 }}
                             className="glass-card w-full max-w-lg relative z-10 p-0 overflow-hidden"
                         >
-                            {purchaseStep !== "success" && (
+                            {!isProcessing && purchaseStep !== "success" && (
                                 <button
                                     onClick={() => setIsPurchaseModalOpen(false)}
                                     className="absolute top-4 right-4 p-2 rounded-full bg-black/20 text-white hover:bg-black/40 transition-colors z-20"
+                                    title="Close modal"
                                 >
                                     <X size={20} />
                                 </button>
@@ -435,6 +446,7 @@ export default function ConsumerDashboard() {
                                             alt={selectedProduct.name}
                                             fill
                                             className="object-cover"
+                                            sizes="512px"
                                         />
                                         <div className="absolute inset-0 bg-gradient-to-t from-surface via-transparent to-transparent" />
                                     </div>
@@ -447,7 +459,7 @@ export default function ConsumerDashboard() {
                                             </div>
                                             <div className="text-2xl font-black text-secondary">{selectedProduct.price}</div>
                                         </div>
-                                        <p className="text-muted leading-relaxed mb-8">
+                                        <p className="text-muted leading-relaxed mb-8 text-sm">
                                             {selectedProduct.description}
                                         </p>
                                         <button
@@ -457,6 +469,7 @@ export default function ConsumerDashboard() {
                                                 setIsPurchaseModalOpen(false);
                                             }}
                                             className="btn-primary w-full justify-center py-4 text-lg"
+                                            title="Add to cart"
                                         >
                                             Add to Cart <Plus size={20} />
                                         </button>
@@ -467,38 +480,42 @@ export default function ConsumerDashboard() {
                             {/* Step Payment Confirmation */}
                             {purchaseStep === "payment" && (
                                 <div className="p-10 flex flex-col">
-                                    <h2 className="text-2xl font-extrabold mb-6">Confirm Payment</h2>
+                                    <h2 className="text-2xl font-extrabold mb-6">Confirm Transaction</h2>
                                     <div className="space-y-4 mb-8">
                                         <div className="max-h-48 overflow-y-auto space-y-2 pr-2">
                                             {cart.map(item => (
                                                 <div key={item.id} className="flex justify-between text-sm py-2 border-b border-white/5">
                                                     <span className="text-muted">{item.name} (x{item.cartQuantity})</span>
-                                                    <span className="font-bold">{item.price}</span>
+                                                    <span className="font-bold">₹{(parseFloat(item.price.replace(/[^0-9.]/g, "")) * item.cartQuantity).toLocaleString()}</span>
                                                 </div>
                                             ))}
                                         </div>
-                                        <div className="flex justify-between items-center pt-4">
-                                            <span className="text-lg font-bold">Total Payable</span>
+                                        <div className="flex justify-between items-center pt-4 border-t border-white/10">
+                                            <span className="text-lg font-bold">Total Amount</span>
                                             <span className="text-2xl font-black text-secondary">₹{cartTotalNum.toLocaleString()}</span>
                                         </div>
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-4">
                                         <button
+                                            disabled={isProcessing}
                                             onClick={() => setIsPurchaseModalOpen(false)}
                                             className="btn-secondary py-4"
+                                            title="Cancel payment"
                                         >
                                             Cancel
                                         </button>
                                         <button
+                                            disabled={isProcessing}
                                             onClick={finalizePayment}
                                             className="btn-primary py-4 justify-center"
+                                            title="Confirm and pay"
                                         >
-                                            Confirm & Pay
+                                            {isProcessing ? "Processing..." : "Confirm & Pay"}
                                         </button>
                                     </div>
                                     <p className="text-[10px] text-muted text-center mt-6 uppercase tracking-widest font-bold">
-                                        Secure Encrypted Transaction
+                                        Certified Secure Payment Portal
                                     </p>
                                 </div>
                             )}
@@ -513,18 +530,22 @@ export default function ConsumerDashboard() {
                                     >
                                         <CheckCircle2 size={48} />
                                     </motion.div>
-                                    <h2 className="text-3xl font-extrabold mb-3">Order Placed!</h2>
-                                    <p className="text-muted mb-8">
-                                        Your payment was successful. The shopkeepers have been notified.
+                                    <h2 className="text-3xl font-extrabold mb-3 text-success">Purchase Success!</h2>
+                                    <p className="text-muted mb-8 text-sm">
+                                        Your order has been logged in your dashboard and the shopkeepers' records.
                                     </p>
-                                    <div className="w-full p-4 bg-white/5 rounded-2xl border border-white/10 flex flex-col gap-2 mb-8 items-start">
-                                        <div className="flex justify-between w-full text-sm">
-                                            <span className="text-muted">Status</span>
-                                            <span className="text-success font-bold uppercase tracking-widest text-[10px]">Confirmed</span>
+                                    <div className="w-full p-6 bg-white/5 rounded-2xl border border-success/20 flex flex-col gap-3 mb-8 items-start">
+                                        <div className="flex justify-between w-full text-xs">
+                                            <span className="text-muted font-bold uppercase tracking-tighter">Status</span>
+                                            <span className="text-success font-black uppercase tracking-widest text-[10px]">Paid & Verified</span>
                                         </div>
-                                        <div className="flex justify-between w-full text-sm">
-                                            <span className="text-muted">Total Paid</span>
-                                            <span className="font-bold text-secondary">₹{cartTotalNum.toLocaleString()}</span>
+                                        <div className="flex justify-between w-full text-xs">
+                                            <span className="text-muted font-bold uppercase tracking-tighter">Transaction Log Time</span>
+                                            <span className="font-mono text-[10px]">{new Date().toLocaleString()}</span>
+                                        </div>
+                                        <div className="flex justify-between w-full text-sm pt-2 border-t border-white/5">
+                                            <span className="text-muted font-bold uppercase tracking-tighter">Total Paid</span>
+                                            <span className="font-black text-secondary text-base">₹{cartTotalNum.toLocaleString()}</span>
                                         </div>
                                     </div>
                                     <button
@@ -534,8 +555,9 @@ export default function ConsumerDashboard() {
                                             setIsCartOpen(false);
                                         }}
                                         className="btn-primary w-full justify-center py-4"
+                                        title="View order history"
                                     >
-                                        Track My Orders
+                                        View Purchase Logs
                                     </button>
                                 </div>
                             )}
@@ -545,19 +567,16 @@ export default function ConsumerDashboard() {
                 )}
             </AnimatePresence>
 
-            {/* Flagged Alert Banner (Bottom) */}
+            {/* Error Notifications */}
             <AnimatePresence>
-                {filteredProducts.some(p => p.isBanned) && (
+                {speechError && (
                     <motion.div
-                        initial={{ y: 100 }}
-                        animate={{ y: 0 }}
-                        exit={{ y: 100 }}
-                        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-6 py-3 bg-danger/90 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl flex items-center gap-3 text-white"
+                        initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 50 }}
+                        className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[400] px-6 py-4 bg-danger/90 text-white rounded-2xl shadow-xl flex items-center gap-3 border border-white/10"
                     >
-                        <AlertTriangle size={18} />
-                        <p className="text-sm font-bold">
-                            Some listings have been blocked due to suspicious content.
-                        </p>
+                        <AlertTriangle size={20} />
+                        <span className="font-bold text-sm">{speechError}</span>
+                        <button onClick={() => { }} className="ml-4 opacity-50 hover:opacity-100"><X size={16} /></button>
                     </motion.div>
                 )}
             </AnimatePresence>
