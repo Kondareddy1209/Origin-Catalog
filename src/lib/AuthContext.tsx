@@ -85,8 +85,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Rehydrate session on mount
     useEffect(() => {
-        const stored = safeParseUser(localStorage.getItem(STORAGE_KEY));
-        setUser(stored);
+        // Cleanup legacy localStorage session if it exists to fix persistent login issues
+        if (typeof window !== "undefined") {
+            localStorage.removeItem("cb_auth_user");
+            localStorage.removeItem("cb_auth_user_v2");
+
+            const stored = safeParseUser(sessionStorage.getItem(STORAGE_KEY));
+            setUser(stored);
+        }
         setIsLoading(false);
     }, []);
 
@@ -123,7 +129,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
 
         // Only store non-sensitive fields
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
         setUser(authUser);
         return { success: true };
     }, []);
@@ -152,13 +158,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             role: "consumer",
         };
 
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
         setUser(authUser);
         return { success: true };
     }, []);
 
     const logout = useCallback(() => {
-        localStorage.removeItem(STORAGE_KEY);
+        sessionStorage.removeItem(STORAGE_KEY);
         setUser(null);
     }, []);
 

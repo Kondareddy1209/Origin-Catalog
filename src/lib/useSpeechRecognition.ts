@@ -6,6 +6,7 @@ interface SpeechOptions {
     onResult?: (text: string) => void;
     onError?: (error: string) => void;
     onEnd?: () => void;
+    lang?: string;
 }
 
 export function useSpeechRecognition() {
@@ -20,9 +21,10 @@ export function useSpeechRecognition() {
         if (SpeechRecognition) {
             setIsSupported(true);
             recognitionRef.current = new SpeechRecognition();
-            recognitionRef.current.continuous = false;
-            recognitionRef.current.interimResults = false;
-            recognitionRef.current.lang = "en-IN";
+            if (recognitionRef.current) {
+                recognitionRef.current.continuous = false;
+                recognitionRef.current.interimResults = false;
+            }
         }
     }, []);
 
@@ -34,9 +36,17 @@ export function useSpeechRecognition() {
             return;
         }
 
+        if (window.location.protocol !== "https:" && window.location.hostname !== "localhost") {
+            const secureMsg = "Speech recognition requires a secure connection (HTTPS).";
+            setError(secureMsg);
+            options?.onError?.(secureMsg);
+            return;
+        }
+
         setError(null);
         setTranscript("");
         setIsListening(true);
+        recognitionRef.current.lang = options?.lang || "en-IN";
 
         recognitionRef.current.onresult = (event: any) => {
             const text = event.results[0][0].transcript;
@@ -46,7 +56,9 @@ export function useSpeechRecognition() {
 
         recognitionRef.current.onerror = (event: any) => {
             console.error("Speech Recognition Error", event.error);
-            const errMsg = event.error === 'not-allowed' ? "Microphone access denied." : `Error: ${event.error}`;
+            const errMsg = event.error === 'not-allowed'
+                ? "Microphone access denied. Please check your browser's site settings and ensure you have allowed microphone access for this site."
+                : `Error: ${event.error}`;
             setError(errMsg);
             options?.onError?.(errMsg);
             setIsListening(false);

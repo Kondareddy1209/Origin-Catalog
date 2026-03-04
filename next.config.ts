@@ -8,7 +8,7 @@ const securityHeaders = [
   // Restrict referrer information
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   // Disable dangerous browser features
-  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
+  { key: "Permissions-Policy", value: "camera=(self), microphone=(self), geolocation=(), payment=()" },
   // Force HTTPS (1 year)
   { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains; preload" },
   // XSS protection for older browsers
@@ -21,7 +21,7 @@ const securityHeaders = [
       "script-src 'self' 'unsafe-eval' 'unsafe-inline'", // Next.js requires unsafe-eval in dev
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
-      "img-src 'self' data: blob:",
+      "img-src 'self' data: blob: https://loremflickr.com",
       "connect-src 'self'",
       "frame-ancestors 'none'",
       "base-uri 'self'",
@@ -44,7 +44,14 @@ const nextConfig: NextConfig = {
   // Image optimisation settings
   images: {
     formats: ["image/avif", "image/webp"],
-    remotePatterns: [],
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'loremflickr.com',
+        port: '',
+        pathname: '/**',
+      },
+    ],
   },
 
   // TypeScript strict checks in builds

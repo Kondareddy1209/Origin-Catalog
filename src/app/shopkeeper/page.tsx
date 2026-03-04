@@ -8,8 +8,8 @@ import { useSpeechRecognition } from "@/lib/useSpeechRecognition";
 import { useRouter } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
 import {
-    Plus, Edit2, Trash2, Package, LayoutDashboard, User, Mic,
-    QrCode, CheckCircle2, Save, X, AlertTriangle, Upload, ImageIcon, type LucideIcon
+    Plus, Edit2, Trash2, Package, LayoutDashboard, User, Mic, TrendingUp, BarChart3,
+    QrCode, CheckCircle2, Save, AlertTriangle, Upload, Volume2, Info, Loader2, type LucideIcon
 } from "lucide-react";
 import { type MockProduct } from "@/lib/mockData";
 import { detectScam, getMatchedKeywords } from "@/lib/scamDetection";
@@ -26,6 +26,16 @@ const NAV_ITEMS: { id: Tab; label: string; icon: LucideIcon }[] = [
 ];
 
 const CATEGORIES = ["Handicrafts", "Fashion", "Grocery", "Home Decor", "Textiles", "Jewellery", "Other"] as const;
+
+const CATEGORY_KEYWORDS: Record<string, string> = {
+    "Handicrafts": "pottery,handicraft,artisan,clay",
+    "Fashion": "clothing,fashion,ethnic,apparel",
+    "Grocery": "fruit,vegetable,grocery,spices",
+    "Home Decor": "homedecor,interior,furniture,craft",
+    "Textiles": "fabric,textile,yarn,weaving",
+    "Jewellery": "jewellery,jewelry,gold,necklace",
+    "Other": "product,commerce,item"
+};
 
 // ---------------------------------------------------------------
 // SIMULATED QR SVG
@@ -76,7 +86,7 @@ export default function ShopkeeperDashboard() {
     // Add/edit form
     const blankForm = {
         name: "", description: "", price: "", category: CATEGORIES[0] as string,
-        quantity: "1", image: "/product-pot.png",
+        quantity: "1", unit: "pcs", unitType: "count" as "count" | "weight", image: "",
     };
     const [form, setForm] = useState(blankForm);
     const [editId, setEditId] = useState<string | null>(null);
@@ -88,6 +98,50 @@ export default function ShopkeeperDashboard() {
     const [qrAmount, setQrAmount] = useState("₹0");
     const [qrGenerated, setQrGenerated] = useState(false);
     const [qrPaid, setQrPaid] = useState(false);
+    const [txnId, setTxnId] = useState("");
+    const [selectedLang, setSelectedLang] = useState("en-IN");
+
+    const speak = (text: string) => {
+        if (!window.speechSynthesis) return;
+        window.speechSynthesis.cancel();
+        const synth = new SpeechSynthesisUtterance(text);
+        synth.lang = selectedLang;
+        synth.rate = 1.1;
+        window.speechSynthesis.speak(synth);
+    };
+
+    // --- AUTO IMAGE GENERATION EFFECT ---
+    useEffect(() => {
+        // Only run if we are in Add Product tab and image is empty or already a loremflickr url
+        if (activeTab !== "addproduct") return;
+
+        const timer = setTimeout(() => {
+            const hasEnoughInfo = form.name.trim().length >= 3;
+            const isAutoImage = !form.image || form.image.startsWith("https://loremflickr.com");
+
+            if (hasEnoughInfo && isAutoImage) {
+                const isEnglish = /^[a-zA-Z0-9\s,.'-]*$/.test(form.name.trim());
+
+                let searchQuery = "";
+                if (isEnglish) {
+                    searchQuery = `${form.name.trim()},commerce`;
+                } else {
+                    const keywords = CATEGORY_KEYWORDS[form.category] || "product";
+                    searchQuery = `${keywords},commerce`;
+                }
+
+                const randomSeed = Math.floor(Math.random() * 1000);
+                const newImg = `https://loremflickr.com/800/600/${encodeURIComponent(searchQuery)}?lock=${randomSeed}`;
+
+                // Only update if the URL actually changed to prevent infinite loops or flickering
+                if (form.image !== newImg) {
+                    setForm(prev => ({ ...prev, image: newImg }));
+                }
+            }
+        }, 1200);
+
+        return () => clearTimeout(timer);
+    }, [form.name, form.category, activeTab]);
 
     useEffect(() => {
         if (!authLoading && (!isAuthenticated || user?.role !== "shopkeeper")) {
@@ -104,18 +158,37 @@ export default function ShopkeeperDashboard() {
     }
 
     const startEdit = (p: MockProduct) => {
-        setForm({ name: p.name, description: p.description, price: p.price, category: p.category, quantity: String(p.quantity), image: p.image ?? "/product-pot.png" });
+        setForm({
+            name: p.name,
+            description: p.description,
+            price: p.price,
+            category: p.category,
+            quantity: String(p.quantity),
+            unit: p.unit || "pcs",
+            unitType: p.unitType || "count",
+            image: p.image ?? ""
+        });
         setEditId(p.id);
         setActiveTab("addproduct");
         setFormError("");
         setFormSuccess("");
     };
 
-    const saveProduct = (e: React.FormEvent) => {
+    const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setFormError("");
+        setFormSuccess("");
 
-        // Scam detection
+        if (!user) {
+            setFormError("Unauthorized. Please login again.");
+            return;
+        }
+
+        if (!form.name.trim() || !form.price) {
+            setFormError("Please fill in the product name and price.");
+            return;
+        }
+
         if (detectScam(form.name, form.description)) {
             const kws = getMatchedKeywords(form.name, form.description);
             setFormError(`Product listing blocked due to suspicious content. Detected keywords: ${kws.join(", ")}`);
@@ -125,10 +198,32 @@ export default function ShopkeeperDashboard() {
         const priceNum = parseFloat(form.price.replace(/[^0-9.]/g, "")) || 0;
         const quantityNum = parseInt(form.quantity) || 1;
 
+        // BETTER AUTO-IMAGE GENERATION
+        let finalImage = form.image;
+        if (!finalImage || finalImage === "/product-pot.png" || finalImage === "/product-scarf.png") {
+            // If the name is non-English (like Telugu/Hindi), 
+            // loremflickr might not find anything good. 
+            // We'll use the category as a fallback/hint.
+            const isEnglish = /^[a-zA-Z0-9\s,.'-]*$/.test(form.name.trim());
+
+            let searchQuery = "";
+            if (isEnglish) {
+                searchQuery = `${form.name.trim()},commerce`;
+            } else {
+                // For non-English name, use category + " " + common keywords
+                searchQuery = `${form.category},product,commerce`;
+            }
+
+            // Randomize slightly to avoid getting the exact same image for same category
+            const randomSeed = Math.floor(Math.random() * 1000);
+            finalImage = `https://loremflickr.com/800/600/${encodeURIComponent(searchQuery)}?lock=${randomSeed}`;
+        }
+
         if (editId) {
             updateProduct(editId, {
                 ...form,
                 priceNum,
+                image: finalImage,
                 quantity: quantityNum
             });
             setFormSuccess("Product updated successfully!");
@@ -141,8 +236,10 @@ export default function ShopkeeperDashboard() {
                 price: form.price,
                 priceNum,
                 category: form.category,
-                image: form.image,
+                image: finalImage,
                 quantity: quantityNum,
+                unit: form.unit,
+                unitType: form.unitType,
             });
             setFormSuccess("Product listed successfully!");
         }
@@ -170,6 +267,12 @@ export default function ShopkeeperDashboard() {
                 const qtyMatch = lower.match(/(?:quantity|qty|stock|units|count) (?:is )?(\d+)/) || lower.match(/(\d+) (?:units|kg|items|pieces)/);
                 const qtyValue = qtyMatch ? qtyMatch[1] : form.quantity;
 
+                // Unit detection
+                const unitType = lower.includes("kg") || lower.includes("kilo") || lower.includes("gram") || lower.includes("litre") ? "weight" : "count";
+                const unitValue = lower.includes("kg") || lower.includes("kilo") ? "kg" :
+                    lower.includes("gram") ? "grams" :
+                        lower.includes("litre") ? "litre" : "pcs";
+
                 // Category detection
                 const categoryMatch = CATEGORIES.find(c => lower.includes(c.toLowerCase()));
 
@@ -182,10 +285,15 @@ export default function ShopkeeperDashboard() {
                     name: nameValue,
                     price: priceValue,
                     quantity: qtyValue,
+                    unit: unitValue,
+                    unitType: unitType,
                     category: categoryMatch || prev.category,
-                    description: `Captured by voice: "${text}"`
+                    description: `Captured by voice (${selectedLang}): "${text}"`
                 }));
+
+                speak(`Listing ${nameValue} at ${priceValue}. Quantity ${qtyValue} ${unitValue}. Please confirm the details.`);
             },
+            lang: selectedLang,
             onError: (err) => setFormError(`Voice Error: ${err}`)
         });
     };
@@ -233,6 +341,7 @@ export default function ShopkeeperDashboard() {
         e.preventDefault();
         setQrGenerated(true);
         setQrPaid(false);
+        setTxnId(`TXN-${Math.random().toString(36).substring(7).toUpperCase()}`);
     };
 
     const simulatePayment = () => {
@@ -272,6 +381,67 @@ export default function ShopkeeperDashboard() {
                             ))}
                         </div>
 
+                        {/* 📈 GROWTH ANALYTICS */}
+                        <div className="grid md:grid-cols-3 gap-6">
+                            <div className="md:col-span-2 glass-card p-6">
+                                <div className="flex items-center justify-between mb-6">
+                                    <div className="flex items-center gap-2">
+                                        <TrendingUp className="text-success" size={20} />
+                                        <h3 className="text-base font-extrabold uppercase tracking-widest text-slate-200">Revenue Momentum</h3>
+                                    </div>
+                                    <span className="text-[10px] font-black bg-success/10 text-success px-3 py-1 rounded-full uppercase tracking-tighter shadow-[0_0_10px_rgba(var(--success-rgb),0.1)]">+14.2% THIS WEEK</span>
+                                </div>
+                                <div className="h-[180px] flex items-end gap-3 px-2">
+                                    {[35, 65, 45, 85, 55, 95, 75].map((h, i) => (
+                                        <div key={i} className="flex-1 flex flex-col items-center gap-3 group">
+                                            <div className="w-full relative">
+                                                <motion.div
+                                                    initial={{ height: 0 }}
+                                                    animate={{ height: `${h}%` }}
+                                                    transition={{ delay: 0.1 * i, duration: 1, ease: "easeOut" }}
+                                                    className="w-full bg-gradient-to-t from-primary/20 via-primary/60 to-primary rounded-t-xl relative group-hover:brightness-125 transition-all shadow-[0_0_20px_rgba(var(--primary-rgb),0.1)]"
+                                                >
+                                                    <div className="absolute -top-7 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-all bg-surface/90 backdrop-blur-md border border-white/10 px-2 py-0.5 rounded-lg text-[10px] font-black shadow-xl z-10 pointer-events-none">
+                                                        ₹{h}k
+                                                    </div>
+                                                </motion.div>
+                                            </div>
+                                            <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">{['M', 'T', 'W', 'T', 'F', 'S', 'S'][i]}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="glass-card p-6 flex flex-col">
+                                <div className="flex items-center gap-2 mb-6">
+                                    <BarChart3 className="text-secondary" size={20} />
+                                    <h3 className="text-base font-extrabold uppercase tracking-widest text-slate-200">Smart Audit</h3>
+                                </div>
+                                <div className="space-y-4 flex-1">
+                                    <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5 relative group cursor-default">
+                                        <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-100 transition-opacity">
+                                            <Info size={12} className="text-primary" />
+                                        </div>
+                                        <div className="flex justify-between items-center mb-1.5">
+                                            <span className="text-[9px] font-black text-primary/60 uppercase tracking-widest">Top Performer</span>
+                                            <span className="text-[9px] font-black text-success uppercase">Active Listing</span>
+                                        </div>
+                                        <p className="text-sm font-black text-foreground truncate">Handmade Clay Pot</p>
+                                    </div>
+                                    <div className="p-4 rounded-2xl bg-danger/5 border border-danger/10 group cursor-default">
+                                        <div className="flex justify-between items-center mb-1.5">
+                                            <span className="text-[9px] font-black text-danger/60 uppercase tracking-widest text-center">Critical Stock</span>
+                                            <span className="text-[9px] font-black text-danger uppercase animate-pulse">Low Supply</span>
+                                        </div>
+                                        <p className="text-sm font-black text-foreground truncate">Red Silk Scarf (2 pcs left)</p>
+                                    </div>
+                                </div>
+                                <button className="mt-6 text-[10px] font-black text-primary hover:text-primary-light uppercase tracking-[0.2em] text-center transition-colors py-2 border border-primary/10 rounded-xl hover:bg-primary/5" title="Export detailed analytics">
+                                    GENERATE REPORT <TrendingUp size={10} className="inline ml-1" />
+                                </button>
+                            </div>
+                        </div>
+
                         {/* Recent Transactions / Purchase Logs */}
                         <div className="glass-card p-0 overflow-hidden">
                             <div className="px-6 py-4 border-b border-white/[0.05] flex justify-between items-center">
@@ -288,7 +458,7 @@ export default function ShopkeeperDashboard() {
                                     <table className="w-full text-sm">
                                         <thead>
                                             <tr className="border-b border-white/[0.05] bg-white/[0.02]">
-                                                {["Buyer Details", "Product Sold", "Qty", "Amount", "Status", "Time & Date"].map(h => (
+                                                {["Buyer Details", "Product Sold", "Qty", "Amount", "Method", "Status", "Time & Date"].map(h => (
                                                     <th key={h} className="text-left px-6 py-3 text-xs font-bold text-muted uppercase tracking-wider">{h}</th>
                                                 ))}
                                             </tr>
@@ -301,8 +471,13 @@ export default function ShopkeeperDashboard() {
                                                         <div className="text-[10px] text-muted font-mono">#{o.consumerId}</div>
                                                     </td>
                                                     <td className="px-6 py-4 font-semibold text-primary">{o.productName}</td>
-                                                    <td className="px-6 py-4 text-muted font-bold">{o.quantity}</td>
+                                                    <td className="px-6 py-4 text-muted font-bold">
+                                                        {o.quantity} <span className="text-[10px] text-muted-foreground ml-1">{o.unit || "pcs"}</span>
+                                                    </td>
                                                     <td className="px-6 py-4 font-black text-secondary">{o.amount}</td>
+                                                    <td className="px-6 py-4">
+                                                        <span className="text-[9px] font-black uppercase bg-secondary/10 text-secondary px-2 py-1 rounded-md">{o.paymentMethod || "COD"}</span>
+                                                    </td>
                                                     <td className="px-6 py-4">
                                                         <span className={`badge ${o.status === "paid" ? "badge-success" : "badge-warning"}`}>{o.status}</span>
                                                     </td>
@@ -345,6 +520,7 @@ export default function ShopkeeperDashboard() {
                                             <div className="flex justify-between">
                                                 <span className="text-xs font-bold text-primary/80 uppercase tracking-widest">{p.category}</span>
                                                 <span className="font-extrabold">{p.price}</span>
+                                                <span className="text-[10px] text-muted font-bold">Qty: {p.quantity} {p.unit}</span>
                                             </div>
                                             <h3 className="font-bold">{p.name}</h3>
                                             <p className="text-muted text-sm line-clamp-2">{p.description}</p>
@@ -373,7 +549,20 @@ export default function ShopkeeperDashboard() {
 
                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
                                     <h2 className="text-2xl font-extrabold">{editId ? "Edit Product" : "Quick List Product"}</h2>
-                                    <div className="flex gap-2">
+                                    <div className="flex items-center gap-2">
+                                        {/* Lang Selector */}
+                                        <select
+                                            title="Voice Language"
+                                            value={selectedLang}
+                                            onChange={(e) => setSelectedLang(e.target.value)}
+                                            className="bg-surface/50 border border-white/10 rounded-xl px-2 py-2 text-[10px] font-black uppercase tracking-tighter text-muted hover:text-foreground transition-colors cursor-pointer outline-none"
+                                        >
+                                            <option value="en-IN">English</option>
+                                            <option value="hi-IN">Hindi (हिंदी)</option>
+                                            <option value="te-IN">Telugu (తెలుగు)</option>
+                                            <option value="ta-IN">Tamil (தமிழ்)</option>
+                                            <option value="mr-IN">Marathi (मराठी)</option>
+                                        </select>
                                         <button
                                             type="button"
                                             onClick={handleVoiceListing}
@@ -385,6 +574,7 @@ export default function ShopkeeperDashboard() {
                                         >
                                             <Mic size={16} className={isListening ? "animate-bounce" : ""} />
                                             {isListening ? "Listening..." : "List by Voice"}
+                                            {isListening && <Volume2 size={12} className="ml-1 opacity-70" />}
                                         </button>
                                         <button
                                             type="button"
@@ -415,7 +605,7 @@ export default function ShopkeeperDashboard() {
                                     </motion.div>
                                 )}
 
-                                <form onSubmit={saveProduct} className="space-y-4">
+                                <form onSubmit={handleSubmit} className="space-y-4">
                                     <div className="space-y-1.5">
                                         <label htmlFor="pname" className="text-xs font-bold text-muted uppercase tracking-widest">Product Name *</label>
                                         <input id="pname" type="text" required maxLength={128} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="form-input" placeholder="e.g. Handmade Clay Pot" />
@@ -433,7 +623,25 @@ export default function ShopkeeperDashboard() {
                                         </div>
                                         <div className="space-y-1.5">
                                             <label htmlFor="pqty" className="text-xs font-bold text-muted uppercase tracking-widest">Available Qty *</label>
-                                            <input id="pqty" type="number" min={1} required value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} className="form-input" />
+                                            <div className="flex gap-2">
+                                                <input id="pqty" type="number" min={1} required value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} className="form-input flex-1" />
+                                                <select
+                                                    className="form-input w-24 appearance-none cursor-pointer"
+                                                    value={form.unit}
+                                                    title="Select quantity unit"
+                                                    onChange={e => {
+                                                        const u = e.target.value;
+                                                        const ut: "weight" | "count" = (u === "kg" || u === "grams" || u === "litre") ? "weight" : "count";
+                                                        setForm({ ...form, unit: u, unitType: ut });
+                                                    }}
+                                                >
+                                                    <option value="pcs">pcs</option>
+                                                    <option value="kg">kg</option>
+                                                    <option value="grams">grams</option>
+                                                    <option value="litre">litre</option>
+                                                    <option value="units">units</option>
+                                                </select>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -460,10 +668,12 @@ export default function ShopkeeperDashboard() {
                                 <label className="text-[10px] font-black text-muted uppercase tracking-[0.2em] block pl-1">Live Preview</label>
                                 <div className="glass-card p-0 overflow-hidden border-white/5 bg-white/[0.02]">
                                     <div className="relative h-40 bg-surface">
-                                        {isScanning ? (
-                                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/40 backdrop-blur-sm z-10">
-                                                <Loader2 size={32} className="text-secondary animate-spin" />
-                                                <span className="text-[10px] font-black uppercase text-secondary tracking-widest">Processing Image...</span>
+                                        {isScanning || (form.image.startsWith("https://loremflickr.com") && form.name.length > 2) ? (
+                                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/20 backdrop-blur-sm z-10 pointer-events-none">
+                                                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/20 border border-primary/30 backdrop-blur-md">
+                                                    <Loader2 size={12} className="text-primary animate-spin" />
+                                                    <span className="text-[9px] font-black uppercase text-primary tracking-widest">AI Vision Active</span>
+                                                </div>
                                             </div>
                                         ) : null}
                                         <Image src={form.image || "/product-pot.png"} alt="Preview" fill className="object-cover" />
@@ -537,7 +747,7 @@ export default function ShopkeeperDashboard() {
                                             </div>
                                             <div className="text-center">
                                                 <p className="text-2xl font-black text-success">SUCCESS!</p>
-                                                <p className="text-sm text-muted">Transaction ID: TXN-{Math.random().toString(36).substring(7).toUpperCase()}</p>
+                                                <p className="text-sm text-muted">Transaction ID: {txnId}</p>
                                                 <p className="text-lg font-bold text-foreground mt-1">{qrAmount} added to wallet.</p>
                                             </div>
                                             <button onClick={() => { setQrGenerated(false); setQrPaid(false); setQrAmount("₹0"); }} className="btn-primary py-3 px-8 text-sm mt-4 shadow-lg shadow-primary/20" title="Create new payment">
@@ -588,14 +798,9 @@ export default function ShopkeeperDashboard() {
     );
 }
 
-const ShoppingCart = (props: any) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+const ShoppingCart = ({ size = 24, ...props }: React.SVGProps<SVGSVGElement> & { size?: number }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
         <circle cx="8" cy="21" r="1" /><circle cx="19" cy="21" r="1" /><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" />
     </svg>
 );
 
-const Loader2 = (props: any) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props} className={"animate-spin " + (props.className || "")}>
-        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-    </svg>
-);

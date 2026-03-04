@@ -522,3 +522,14 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Force hide Next.js Dev Tools/Indicators for a clean demo */
+[data-nextjs-toast], 
+[data-nextjs-dialog], 
+.nextjs-static-indicator-container, 
+#nextjs-dev-overlay,
+nextjs-portal {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}

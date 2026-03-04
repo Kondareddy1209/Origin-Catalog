@@ -10,7 +10,7 @@ import DashboardShell from "@/components/DashboardShell";
 import {
     ShoppingBag, ShoppingCart, User, Mic,
     Search, Filter, CheckCircle2, X,
-    AlertTriangle, ArrowRight, Trash2, Plus, Minus,
+    AlertTriangle, ArrowRight, Trash2, Plus, Minus, MessageCircle,
     Wallet, CreditCard, QrCode, Building2, Landmark, type LucideIcon
 } from "lucide-react";
 import { type MockProduct } from "@/lib/mockData";
@@ -133,6 +133,7 @@ export default function ConsumerDashboard() {
                 productId: item.id,
                 productName: item.name,
                 quantity: item.cartQuantity,
+                unit: (item as MockProduct).unit || "pcs",
                 amount: `₹${(parseFloat(item.price.replace(/[^0-9.]/g, "")) * item.cartQuantity).toLocaleString()}`,
                 paymentMethod: selectedPaymentMethod,
             }));
@@ -246,7 +247,10 @@ export default function ConsumerDashboard() {
                                     <div className="p-5 flex-1 flex flex-col gap-2">
                                         <div className="flex justify-between items-start">
                                             <span className="text-[10px] font-bold text-primary uppercase tracking-widest">{p.category}</span>
-                                            <span className="font-extrabold text-lg text-secondary">{p.price}</span>
+                                            <div className="flex flex-col items-end">
+                                                <span className="font-extrabold text-lg text-secondary">{p.price}</span>
+                                                <span className="text-[10px] text-muted font-bold">per {p.unit || "pcs"}</span>
+                                            </div>
                                         </div>
                                         <h3 className="font-bold text-base group-hover:text-primary transition-colors leading-tight">
                                             {p.name}
@@ -294,6 +298,15 @@ export default function ConsumerDashboard() {
                                                 >
                                                     <Plus size={12} /> Cart
                                                 </button>
+                                                <a
+                                                    href={`https://wa.me/911234567890?text=Hi, I am interested in your product: ${p.name} (${p.price}). Is it available?`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="p-2 rounded-lg bg-success/10 text-success hover:bg-success/20 transition-all flex items-center justify-center"
+                                                    title={`Contact vendor for ${p.name} on WhatsApp`}
+                                                >
+                                                    <MessageCircle size={14} />
+                                                </a>
                                             </div>
                                         </div>
                                     </div>
@@ -319,6 +332,7 @@ export default function ConsumerDashboard() {
                                             <th className="text-left px-6 py-3 text-xs font-bold text-muted uppercase tracking-wider">Shop</th>
                                             <th className="text-left px-6 py-3 text-xs font-bold text-muted uppercase tracking-wider">Qty</th>
                                             <th className="text-left px-6 py-3 text-xs font-bold text-muted uppercase tracking-wider">Amount</th>
+                                            <th className="text-left px-6 py-3 text-xs font-bold text-muted uppercase tracking-wider">Method</th>
                                             <th className="text-left px-6 py-3 text-xs font-bold text-muted uppercase tracking-wider">Status</th>
                                             <th className="text-left px-6 py-3 text-xs font-bold text-muted uppercase tracking-wider">Date & Time</th>
                                         </tr>
@@ -329,8 +343,13 @@ export default function ConsumerDashboard() {
                                                 <td className="px-6 py-4 font-mono text-[10px] text-muted">#{o.id.slice(-8)}</td>
                                                 <td className="px-6 py-4 font-semibold">{o.productName}</td>
                                                 <td className="px-6 py-4 italic text-muted text-xs">{o.shopName}</td>
-                                                <td className="px-6 py-4 font-bold">{o.quantity}</td>
+                                                <td className="px-6 py-4 font-bold">
+                                                    {o.quantity} <span className="text-[10px] text-muted-foreground ml-1">{o.unit || "pcs"}</span>
+                                                </td>
                                                 <td className="px-6 py-4 font-bold text-secondary">{o.amount}</td>
+                                                <td className="px-6 py-4">
+                                                    <span className="text-[10px] font-black uppercase text-accent bg-accent/10 px-2 py-0.5 rounded-full">{o.paymentMethod || "COD"}</span>
+                                                </td>
                                                 <td className="px-6 py-4">
                                                     <span className={`badge ${o.status === "paid" ? "badge-success" : "badge-warning"}`}>{o.status}</span>
                                                 </td>

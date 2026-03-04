@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/lib/AuthContext";
 import { DataProvider } from "@/lib/DataContext";
+import PWARegistration from "@/components/PWARegistration";
 
 export const metadata: Metadata = {
   title: "CatalogBuddy | Voice-First AI Catalog Platform for Small Vendors",
@@ -27,6 +28,13 @@ export const metadata: Metadata = {
     index: true,
     follow: true,
   },
+  manifest: "/manifest.json",
+  themeColor: "#6366f1",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "CatalogBuddy",
+  },
 };
 
 export default function RootLayout({
@@ -36,19 +44,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="scroll-smooth">
-      <head>
-        {/* Security headers as meta tags (supplement to HTTP headers) */}
-        <meta httpEquiv="X-Content-Type-Options" content="nosniff" />
-        <meta httpEquiv="X-Frame-Options" content="DENY" />
-        <meta httpEquiv="Referrer-Policy" content="strict-origin-when-cross-origin" />
-        <meta
-          httpEquiv="Permissions-Policy"
-          content="camera=(self), microphone=(self), geolocation=()"
-        />
-        {/* Prevent caching of sensitive pages */}
-        <meta httpEquiv="Cache-Control" content="no-store" />
-      </head>
       <body>
+        <PWARegistration />
         <AuthProvider>
           <DataProvider>
             {children}

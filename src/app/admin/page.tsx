@@ -160,7 +160,7 @@ export default function AdminDashboard() {
                                 <table className="w-full text-sm">
                                     <thead>
                                         <tr className="border-b border-white/[0.05] bg-white/[0.02]">
-                                            {["Customer", "Product", "Shop", "Amount", "Time"].map((h) => (
+                                            {["Customer", "Product", "Shop", "Amount", "Method", "Time"].map((h) => (
                                                 <th key={h} className="text-left px-6 py-3 text-xs font-bold text-muted uppercase tracking-wider">{h}</th>
                                             ))}
                                         </tr>
@@ -172,6 +172,9 @@ export default function AdminDashboard() {
                                                 <td className="px-6 py-3 text-primary font-bold">{o.productName}</td>
                                                 <td className="px-6 py-3 italic text-muted text-xs">{o.shopName}</td>
                                                 <td className="px-6 py-3 font-bold text-secondary">{o.amount}</td>
+                                                <td className="px-6 py-3">
+                                                    <span className="text-[10px] font-black uppercase text-accent bg-accent/10 px-2 py-0.5 rounded-full">{o.paymentMethod || "COD"}</span>
+                                                </td>
                                                 <td className="px-6 py-3 text-muted text-[10px] uppercase font-bold">{o.createdAt}</td>
                                             </tr>
                                         ))}
@@ -239,7 +242,7 @@ export default function AdminDashboard() {
                                 <table className="w-full text-sm">
                                     <thead>
                                         <tr className="border-b border-white/[0.05] bg-white/[0.02]">
-                                            {["Listing", "Shop", "Category", "Price", "Qty", "Flags", "Actions"].map((h) => (
+                                            {["Listing", "Shop", "Category", "Price", "Qty", "Safety Score", "Actions"].map((h) => (
                                                 <th key={h} className="text-left px-5 py-3 text-xs font-bold text-muted uppercase tracking-wider">{h}</th>
                                             ))}
                                         </tr>
@@ -251,9 +254,22 @@ export default function AdminDashboard() {
                                                 <td className="px-5 py-4 text-muted text-xs">{p.shopName}</td>
                                                 <td className="px-5 py-4 text-muted">{p.category}</td>
                                                 <td className="px-5 py-4 text-primary font-bold">{p.price}</td>
-                                                <td className="px-5 py-4 text-muted">{p.quantity}</td>
+                                                <td className="px-5 py-4 text-muted">
+                                                    {p.quantity} <span className="text-[10px] opacity-70">{p.unit || "pcs"}</span>
+                                                </td>
                                                 <td className="px-5 py-4">
-                                                    <StatusBadge status={p.isBanned ? "flagged" : "active"} />
+                                                    <div className="flex items-center gap-2">
+                                                        <div className={`h-1.5 w-12 rounded-full overflow-hidden ${p.isBanned ? 'bg-danger/20' : 'bg-success/20'}`}>
+                                                            <motion.div
+                                                                initial={{ width: 0 }}
+                                                                animate={{ width: p.isBanned ? '15%' : '98%' }}
+                                                                className={`h-full ${p.isBanned ? 'bg-danger' : 'bg-success'}`}
+                                                            />
+                                                        </div>
+                                                        <span className={`text-[10px] font-black ${p.isBanned ? 'text-danger' : 'text-success'}`}>
+                                                            {p.isBanned ? '15%' : '98%'}
+                                                        </span>
+                                                    </div>
                                                 </td>
                                                 <td className="px-5 py-4">
                                                     <div className="flex gap-2">
@@ -288,7 +304,7 @@ export default function AdminDashboard() {
                                 <table className="w-full text-sm">
                                     <thead>
                                         <tr className="border-b border-white/[0.05] bg-black/20">
-                                            {["Order ID", "Customer Details", "Product & Shop", "Qty", "Amount", "Status", "Time & Date"].map((h) => (
+                                            {["Order ID", "Customer Details", "Product & Shop", "Qty", "Amount", "Method", "Status", "Time & Date"].map((h) => (
                                                 <th key={h} className="text-left px-6 py-4 text-[10px] font-black text-muted uppercase tracking-[0.2em]">{h}</th>
                                             ))}
                                         </tr>
@@ -305,8 +321,13 @@ export default function AdminDashboard() {
                                                     <div className="font-bold text-primary">{o.productName}</div>
                                                     <div className="text-[10px] text-muted italic">Store: {o.shopName}</div>
                                                 </td>
-                                                <td className="px-6 py-4 font-black">{o.quantity}</td>
+                                                <td className="px-6 py-4 font-black">
+                                                    {o.quantity} <span className="text-[10px] text-muted-foreground ml-1">{o.unit || "pcs"}</span>
+                                                </td>
                                                 <td className="px-6 py-4 font-black text-secondary">{o.amount}</td>
+                                                <td className="px-6 py-4">
+                                                    <div className="text-[10px] font-black uppercase text-primary border border-primary/20 bg-primary/5 px-2 py-1 rounded-md text-center">{o.paymentMethod || "COD"}</div>
+                                                </td>
                                                 <td className="px-6 py-4"><StatusBadge status={o.status} /></td>
                                                 <td className="px-6 py-4 text-[10px] font-bold text-muted leading-tight">{o.createdAt}</td>
                                             </tr>

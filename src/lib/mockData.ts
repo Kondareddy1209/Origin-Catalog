@@ -25,6 +25,8 @@ export interface MockProduct {
     category: string;
     image: string;
     quantity: number;
+    unit: string; // e.g. "kg", "pcs", "litre"
+    unitType: "weight" | "count";
     status: "active" | "suspended" | "flagged";
     isBanned: boolean;
     isScam: boolean;
@@ -40,6 +42,7 @@ export interface MockOrder {
     productId: string;
     productName: string;
     quantity: number;
+    unit: string;
     amount: string;
     status: "pending" | "paid" | "cancelled";
     paymentMethod?: string;
@@ -110,8 +113,10 @@ export const MOCK_PRODUCTS: MockProduct[] = [
         price: "₹800",
         priceNum: 800,
         category: "Home Decor",
-        image: "/product-pot.png",
+        image: "https://loremflickr.com/800/600/pottery,clay,handicraft",
         quantity: 15,
+        unit: "pcs",
+        unitType: "count",
         status: "active",
         isBanned: false,
         isScam: false,
@@ -126,8 +131,10 @@ export const MOCK_PRODUCTS: MockProduct[] = [
         price: "₹1200",
         priceNum: 1200,
         category: "Fashion",
-        image: "/product-scarf.png",
+        image: "https://loremflickr.com/800/600/silk,scarf,fashion",
         quantity: 8,
+        unit: "pcs",
+        unitType: "count",
         status: "active",
         isBanned: false,
         isScam: false,
@@ -142,8 +149,10 @@ export const MOCK_PRODUCTS: MockProduct[] = [
         price: "₹650",
         priceNum: 650,
         category: "Textiles",
-        image: "/product-scarf.png",
+        image: "https://loremflickr.com/800/600/fabric,textile,cotton",
         quantity: 25,
+        unit: "kg",
+        unitType: "weight",
         status: "active",
         isBanned: false,
         isScam: false,
@@ -158,8 +167,10 @@ export const MOCK_PRODUCTS: MockProduct[] = [
         price: "₹0",
         priceNum: 0,
         category: "Other",
-        image: "/product-pot.png",
+        image: "https://loremflickr.com/800/600/spam,scam,warning",
         quantity: 999,
+        unit: "units",
+        unitType: "count",
         status: "flagged",
         isBanned: true,
         isScam: true,
@@ -180,6 +191,7 @@ export const MOCK_ORDERS: MockOrder[] = [
         productId: "p1",
         productName: "Handmade Clay Pot",
         quantity: 1,
+        unit: "pcs",
         amount: "₹800",
         status: "paid",
         createdAt: "2025-05-10",
@@ -193,6 +205,7 @@ export const MOCK_ORDERS: MockOrder[] = [
         productId: "p2",
         productName: "Red Silk Scarf",
         quantity: 1,
+        unit: "pcs",
         amount: "₹1200",
         status: "pending",
         createdAt: "2025-05-11",
@@ -206,6 +219,7 @@ export const MOCK_ORDERS: MockOrder[] = [
         productId: "p3",
         productName: "Cotton Fabric Roll",
         quantity: 2,
+        unit: "kg",
         amount: "₹1300",
         status: "paid",
         createdAt: "2025-05-12",
