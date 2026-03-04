@@ -510,23 +510,7 @@ body {
   border-radius: var(--radius-sm);
 }
 
-/* Skip to content (accessibility) */
-.skip-to-content {
-  position: absolute;
-  top: -100%;
-  left: 1rem;
-  padding: 0.5rem 1rem;
-  background: var(--primary);
-  color: white;
-  font-weight: bold;
-  border-radius: var(--radius-sm);
-  z-index: 9999;
-  transition: top 0.2s;
-}
 
-.skip-to-content:focus {
-  top: 1rem;
-}
 
 /* Responsive media query for reduced motion */
 @media (prefers-reduced-motion: reduce) {

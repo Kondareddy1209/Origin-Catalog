@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { useRouter } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
 import {
-    Plus, Edit2, Trash2, Package, LayoutDashboard, User,
+    Plus, Edit2, Trash2, Package, LayoutDashboard, User, Mic,
     QrCode, CheckCircle2, Save, X, AlertTriangle, type LucideIcon
 } from "lucide-react";
 import { MOCK_PRODUCTS, MOCK_ORDERS, type MockProduct } from "@/lib/mockData";
@@ -80,6 +80,7 @@ export default function ShopkeeperDashboard() {
     const [editId, setEditId] = useState<string | null>(null);
     const [formError, setFormError] = useState("");
     const [formSuccess, setFormSuccess] = useState("");
+    const [isListening, setIsListening] = useState(false);
 
     // QR payment state
     const [qrAmount, setQrAmount] = useState("₹0");
@@ -155,6 +156,25 @@ export default function ShopkeeperDashboard() {
         setForm(blankForm);
         setEditId(null);
         setTimeout(() => { setActiveTab("products"); setFormSuccess(""); }, 1200);
+    };
+
+    const handleVoiceListing = () => {
+        setIsListening(true);
+        // Simulate voice recognition parsing
+        // In a real app, this would use Web Speech API or a backend AI
+        setTimeout(() => {
+            setForm({
+                name: "Handmade Bamboo Basket",
+                description: "Eco-friendly natural bamboo basket, perfect for home storage and decor. Crafted by local artisans.",
+                price: "₹850",
+                category: "Handicrafts",
+                quantity: "15",
+                image: "/product-pot.png"
+            });
+            setIsListening(false);
+            setFormSuccess("Voice details captured successfully! Please review and save.");
+            setTimeout(() => setFormSuccess(""), 3000);
+        }, 2500);
     };
 
     const generateQR = (e: React.FormEvent) => {
@@ -289,7 +309,22 @@ export default function ShopkeeperDashboard() {
                     <motion.div key="addproduct" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-2xl">
                         <div className="glass-card p-8 relative overflow-hidden">
                             <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-primary to-transparent" />
-                            <h2 className="text-2xl font-extrabold mb-6">{editId ? "Edit Product" : "New Product Listing"}</h2>
+
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                                <h2 className="text-2xl font-extrabold">{editId ? "Edit Product" : "New Product Listing"}</h2>
+                                <button
+                                    type="button"
+                                    onClick={handleVoiceListing}
+                                    disabled={isListening}
+                                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${isListening
+                                            ? "bg-primary text-white animate-pulse"
+                                            : "bg-primary/10 text-primary hover:bg-primary/20"
+                                        }`}
+                                >
+                                    <Mic size={16} className={isListening ? "animate-bounce" : ""} />
+                                    {isListening ? "Listening..." : "List by Voice"}
+                                </button>
+                            </div>
 
                             {formError && (
                                 <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} className="flex items-start gap-3 p-4 rounded-xl bg-danger/10 border border-danger/30 text-danger text-sm mb-5" role="alert" aria-live="polite">

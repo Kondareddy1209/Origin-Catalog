@@ -46,8 +46,7 @@ export default function Navbar() {
 
   return (
     <>
-      {/* Skip to main content (accessibility) */}
-      <a href="#hero" className="skip-to-content">Skip to main content</a>
+
 
       <header
         className={`fixed top-0 left-0 right-0 z-[90] transition-all duration-300 ${isScrolled
