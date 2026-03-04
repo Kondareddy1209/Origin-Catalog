@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/lib/AuthContext";
 import { useData } from "@/lib/DataContext";
@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
 import {
     Plus, Edit2, Trash2, Package, LayoutDashboard, User, Mic,
-    QrCode, CheckCircle2, Save, X, AlertTriangle, type LucideIcon
+    QrCode, CheckCircle2, Save, X, AlertTriangle, Upload, ImageIcon, type LucideIcon
 } from "lucide-react";
 import { type MockProduct } from "@/lib/mockData";
 import { detectScam, getMatchedKeywords } from "@/lib/scamDetection";
@@ -25,7 +25,7 @@ const NAV_ITEMS: { id: Tab; label: string; icon: LucideIcon }[] = [
     { id: "profile", label: "Shop Profile", icon: User },
 ];
 
-const CATEGORIES = ["Home Decor", "Fashion", "Food", "Handicrafts", "Textiles", "Jewellery", "Other"] as const;
+const CATEGORIES = ["Handicrafts", "Fashion", "Grocery", "Home Decor", "Textiles", "Jewellery", "Other"] as const;
 
 // ---------------------------------------------------------------
 // SIMULATED QR SVG
@@ -60,6 +60,7 @@ export default function ShopkeeperDashboard() {
     const { isListening, startListening, stopListening, error: speechError } = useSpeechRecognition();
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<Tab>("overview");
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // My products & orders
     const myProducts = products.filter((p) => p.shopkeeperId === user?.id);
@@ -79,6 +80,7 @@ export default function ShopkeeperDashboard() {
     };
     const [form, setForm] = useState(blankForm);
     const [editId, setEditId] = useState<string | null>(null);
+    const [isScanning, setIsScanning] = useState(false);
     const [formError, setFormError] = useState("");
     const [formSuccess, setFormSuccess] = useState("");
 
@@ -120,11 +122,14 @@ export default function ShopkeeperDashboard() {
             return;
         }
 
+        const priceNum = parseFloat(form.price.replace(/[^0-9.]/g, "")) || 0;
+        const quantityNum = parseInt(form.quantity) || 1;
+
         if (editId) {
             updateProduct(editId, {
                 ...form,
-                priceNum: parseFloat(form.price.replace(/[^0-9.]/g, "")) || 0,
-                quantity: parseInt(form.quantity) || 0
+                priceNum,
+                quantity: quantityNum
             });
             setFormSuccess("Product updated successfully!");
         } else {
@@ -134,13 +139,14 @@ export default function ShopkeeperDashboard() {
                 name: form.name.trim(),
                 description: form.description.trim(),
                 price: form.price,
-                priceNum: parseFloat(form.price.replace(/[^0-9.]/g, "")) || 0,
+                priceNum,
                 category: form.category,
                 image: form.image,
-                quantity: parseInt(form.quantity) || 1,
+                quantity: quantityNum,
             });
             setFormSuccess("Product listed successfully!");
         }
+
         setForm(blankForm);
         setEditId(null);
         setTimeout(() => { setActiveTab("products"); setFormSuccess(""); }, 1200);
@@ -154,23 +160,73 @@ export default function ShopkeeperDashboard() {
 
         startListening({
             onResult: (text) => {
-                // Heuristic parsing: Name, Price, Category
-                // e.g. "Listing Bamboo Basket for 500 rupees in Handicrafts"
-                const parts = text.toLowerCase().split(" for ");
-                const namePart = parts[0]?.replace("listing ", "").trim();
-                const priceMatch = text.match(/(\d+)/);
-                const categoryMatch = CATEGORIES.find(c => text.toLowerCase().includes(c.toLowerCase()));
+                const lower = text.toLowerCase();
+
+                // Price detection
+                const priceMatch = lower.match(/(?:price|rate|at|for|cost) (?:is )?(\d+)/) || lower.match(/(\d+) (?:rupees|rs|bucks)/);
+                const priceValue = priceMatch ? `₹${priceMatch[1]}` : form.price;
+
+                // Quantity detection
+                const qtyMatch = lower.match(/(?:quantity|qty|stock|units|count) (?:is )?(\d+)/) || lower.match(/(\d+) (?:units|kg|items|pieces)/);
+                const qtyValue = qtyMatch ? qtyMatch[1] : form.quantity;
+
+                // Category detection
+                const categoryMatch = CATEGORIES.find(c => lower.includes(c.toLowerCase()));
+
+                // Name detection
+                const namePart = text.split(/price|quantity|qty|for|at|rs|rupees/i)[0].trim().replace(/^listing\s+/i, "");
+                const nameValue = namePart ? namePart.charAt(0).toUpperCase() + namePart.slice(1) : form.name;
 
                 setForm(prev => ({
                     ...prev,
-                    name: namePart ? namePart.charAt(0).toUpperCase() + namePart.slice(1) : prev.name,
-                    price: priceMatch ? `₹${priceMatch[0]}` : prev.price,
+                    name: nameValue,
+                    price: priceValue,
+                    quantity: qtyValue,
                     category: categoryMatch || prev.category,
                     description: `Captured by voice: "${text}"`
                 }));
             },
             onError: (err) => setFormError(`Voice Error: ${err}`)
         });
+    };
+
+    const handleImageScan = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsScanning(true);
+        const reader = new FileReader();
+        reader.onload = (prev) => {
+            const dataUrl = prev.target?.result as string;
+
+            // Simulate AI Analysis
+            setTimeout(() => {
+                const fileName = file.name.toLowerCase();
+                let name = form.name;
+                let category = form.category;
+                let desc = form.description;
+
+                if (fileName.includes("pot") || fileName.includes("clay")) {
+                    name = "Handcrafted Clay Pot";
+                    category = "Handicrafts";
+                    desc = "Beautiful clay pot for water storage and cooling.";
+                } else if (fileName.includes("scarf") || fileName.includes("silk")) {
+                    name = "Pure Silk Scarf";
+                    category = "Fashion";
+                    desc = "Elegant silk scarf with traditional artisan patterns.";
+                }
+
+                setForm(prevForm => ({
+                    ...prevForm,
+                    name: name || "New Scanned Product",
+                    category,
+                    description: desc || "Automatically analyzed from image.",
+                    image: dataUrl
+                }));
+                setIsScanning(false);
+            }, 1800);
+        };
+        reader.readAsDataURL(file);
     };
 
     const generateQR = (e: React.FormEvent) => {
@@ -310,80 +366,126 @@ export default function ShopkeeperDashboard() {
 
                 {/* ── ADD/EDIT PRODUCT ── */}
                 {activeTab === "addproduct" && (
-                    <motion.div key="addproduct" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-2xl">
-                        <div className="glass-card p-8 relative overflow-hidden">
-                            <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-primary to-transparent" />
+                    <motion.div key="addproduct" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-3xl">
+                        <div className="grid md:grid-cols-[1fr_280px] gap-6">
+                            <div className="glass-card p-8 relative overflow-hidden">
+                                <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-primary to-transparent" />
 
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                                <h2 className="text-2xl font-extrabold">{editId ? "Edit Product" : "New Product Listing"}</h2>
-                                <button
-                                    type="button"
-                                    onClick={handleVoiceListing}
-                                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${isListening
-                                        ? "bg-danger text-white animate-pulse"
-                                        : "bg-primary/10 text-primary hover:bg-primary/20"
-                                        }`}
-                                    title={isListening ? "Stop listening" : "Start voice listing"}
-                                >
-                                    <Mic size={16} className={isListening ? "animate-bounce" : ""} />
-                                    {isListening ? "Listening..." : "List by Voice"}
-                                </button>
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                                    <h2 className="text-2xl font-extrabold">{editId ? "Edit Product" : "Quick List Product"}</h2>
+                                    <div className="flex gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleVoiceListing}
+                                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${isListening
+                                                ? "bg-danger text-white animate-pulse shadow-[0_0_15px_rgba(var(--danger-rgb),0.4)]"
+                                                : "bg-primary/10 text-primary hover:bg-primary/20"
+                                                }`}
+                                            title={isListening ? "Stop listening" : "Start voice listing"}
+                                        >
+                                            <Mic size={16} className={isListening ? "animate-bounce" : ""} />
+                                            {isListening ? "Listening..." : "List by Voice"}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => fileInputRef.current?.click()}
+                                            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-secondary/10 text-secondary hover:bg-secondary/20 transition-all"
+                                            title="Scan from image"
+                                        >
+                                            {isScanning ? <span className="animate-spin inline-block">◌</span> : <Upload size={16} />}
+                                            {isScanning ? "Scanning..." : "Image Scan"}
+                                        </button>
+                                        <input type="file" ref={fileInputRef} onChange={handleImageScan} accept="image/*" className="hidden" />
+                                    </div>
+                                </div>
+
+                                {(formError || speechError) && (
+                                    <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} className="flex items-start gap-4 p-4 rounded-xl bg-danger/10 border border-danger/30 text-danger text-sm mb-6" role="alert" aria-live="polite">
+                                        <AlertTriangle size={18} className="shrink-0 mt-0.5" aria-hidden="true" />
+                                        <div>
+                                            <p className="font-bold">Entry Blocked</p>
+                                            <p className="mt-0.5 opacity-90">{formError || speechError}</p>
+                                        </div>
+                                    </motion.div>
+                                )}
+
+                                {formSuccess && (
+                                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 p-4 rounded-xl bg-success/10 border border-success/30 text-success text-sm mb-6" role="status">
+                                        <CheckCircle2 size={17} aria-hidden="true" /> {formSuccess}
+                                    </motion.div>
+                                )}
+
+                                <form onSubmit={saveProduct} className="space-y-4">
+                                    <div className="space-y-1.5">
+                                        <label htmlFor="pname" className="text-xs font-bold text-muted uppercase tracking-widest">Product Name *</label>
+                                        <input id="pname" type="text" required maxLength={128} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="form-input" placeholder="e.g. Handmade Clay Pot" />
+                                    </div>
+
+                                    <div className="space-y-1.5">
+                                        <label htmlFor="pdesc" className="text-xs font-bold text-muted uppercase tracking-widest">Description *</label>
+                                        <textarea id="pdesc" required maxLength={512} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="form-input min-h-[100px] resize-none" placeholder="Describe your product manually or via AI tools above..." />
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1.5">
+                                            <label htmlFor="pprice" className="text-xs font-bold text-muted uppercase tracking-widest">Listing Price *</label>
+                                            <input id="pprice" type="text" required value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} className="form-input" placeholder="₹500" />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label htmlFor="pqty" className="text-xs font-bold text-muted uppercase tracking-widest">Available Qty *</label>
+                                            <input id="pqty" type="number" min={1} required value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} className="form-input" />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-1.5">
+                                        <label htmlFor="pcat" className="text-xs font-bold text-muted uppercase tracking-widest">Market Category</label>
+                                        <select id="pcat" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} className="form-input appearance-none cursor-pointer">
+                                            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                                        </select>
+                                    </div>
+
+                                    <div className="flex gap-3 pt-4">
+                                        <button type="submit" className="btn-primary flex-2 justify-center py-4 text-base" title="List your product">
+                                            <Save size={18} aria-hidden="true" /> {editId ? "Update System" : "Publish Listing"}
+                                        </button>
+                                        <button type="button" onClick={() => { setActiveTab("products"); setForm(blankForm); setEditId(null); setFormError(""); }} className="btn-secondary py-4 px-6" title="Cancel creation">
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </form>
                             </div>
 
-                            {(formError || speechError) && (
-                                <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} className="flex items-start gap-4 p-4 rounded-xl bg-danger/10 border border-danger/30 text-danger text-sm mb-5" role="alert" aria-live="polite">
-                                    <AlertTriangle size={18} className="shrink-0 mt-0.5" aria-hidden="true" />
-                                    <div>
-                                        <p className="font-bold">Error Encountered</p>
-                                        <p className="mt-0.5 opacity-90">{formError || speechError}</p>
+                            {/* Preview Card */}
+                            <div className="space-y-4">
+                                <label className="text-[10px] font-black text-muted uppercase tracking-[0.2em] block pl-1">Live Preview</label>
+                                <div className="glass-card p-0 overflow-hidden border-white/5 bg-white/[0.02]">
+                                    <div className="relative h-40 bg-surface">
+                                        {isScanning ? (
+                                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/40 backdrop-blur-sm z-10">
+                                                <Loader2 size={32} className="text-secondary animate-spin" />
+                                                <span className="text-[10px] font-black uppercase text-secondary tracking-widest">Processing Image...</span>
+                                            </div>
+                                        ) : null}
+                                        <Image src={form.image || "/product-pot.png"} alt="Preview" fill className="object-cover" />
+                                        <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-transparent to-transparent" />
                                     </div>
-                                </motion.div>
-                            )}
-
-                            {formSuccess && (
-                                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 p-4 rounded-xl bg-success/10 border border-success/30 text-success text-sm mb-5" role="status">
-                                    <CheckCircle2 size={17} aria-hidden="true" /> {formSuccess}
-                                </motion.div>
-                            )}
-
-                            <form onSubmit={saveProduct} className="space-y-4">
-                                <div className="space-y-1.5">
-                                    <label htmlFor="pname" className="text-xs font-bold text-muted uppercase tracking-widest">Product Name *</label>
-                                    <input id="pname" type="text" required maxLength={128} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="form-input" placeholder="e.g. Handmade Clay Pot" />
-                                </div>
-
-                                <div className="space-y-1.5">
-                                    <label htmlFor="pdesc" className="text-xs font-bold text-muted uppercase tracking-widest">Description *</label>
-                                    <textarea id="pdesc" required maxLength={512} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="form-input min-h-[90px] resize-none" placeholder="Describe your product..." />
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-1.5">
-                                        <label htmlFor="pprice" className="text-xs font-bold text-muted uppercase tracking-widest">Price *</label>
-                                        <input id="pprice" type="text" required value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} className="form-input" placeholder="₹500" />
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label htmlFor="pqty" className="text-xs font-bold text-muted uppercase tracking-widest">Quantity *</label>
-                                        <input id="pqty" type="number" min={1} required value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} className="form-input" />
+                                    <div className="p-5 space-y-2">
+                                        <div className="flex justify-between items-start">
+                                            <span className="text-[9px] font-black text-primary uppercase tracking-[0.2em] leading-none">{form.category || "CATEGORY"}</span>
+                                            <span className="text-lg font-black text-secondary leading-none">{form.price || "₹0"}</span>
+                                        </div>
+                                        <h4 className="font-extrabold text-foreground leading-tight truncate">{form.name || "Untitled Product"}</h4>
+                                        <p className="text-[11px] text-muted italic line-clamp-2 leading-relaxed h-[36px]">{form.description || "Description will appear here..."}</p>
                                     </div>
                                 </div>
-
-                                <div className="space-y-1.5">
-                                    <label htmlFor="pcat" className="text-xs font-bold text-muted uppercase tracking-widest">Category</label>
-                                    <select id="pcat" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} className="form-input appearance-none cursor-pointer">
-                                        {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                                    </select>
+                                <div className="p-4 rounded-xl bg-white/[0.03] border border-white/5">
+                                    <p className="text-[9px] font-black text-muted uppercase mb-2 tracking-widest text-center">Safety Status</p>
+                                    <div className="flex items-center justify-center gap-2">
+                                        <CheckCircle2 size={12} className="text-success" />
+                                        <span className="text-[10px] font-bold text-success uppercase">Approved by AI</span>
+                                    </div>
                                 </div>
-
-                                <div className="flex gap-3 pt-2">
-                                    <button type="submit" className="btn-primary flex-1 justify-center py-3" title="List your product">
-                                        <Save size={16} aria-hidden="true" /> {editId ? "Save Changes" : "List Product"}
-                                    </button>
-                                    <button type="button" onClick={() => { setActiveTab("products"); setForm(blankForm); setEditId(null); setFormError(""); }} className="btn-secondary py-3 px-5" title="Cancel creation">
-                                        <X size={16} aria-hidden="true" /> Cancel
-                                    </button>
-                                </div>
-                            </form>
+                            </div>
                         </div>
                     </motion.div>
                 )}
@@ -398,45 +500,48 @@ export default function ShopkeeperDashboard() {
                                     <QrCode size={24} aria-hidden="true" />
                                 </div>
                                 <div>
-                                    <h2 className="text-2xl font-extrabold">QR Payment</h2>
-                                    <p className="text-sm text-muted">Generate a QR for consumer payment</p>
+                                    <h2 className="text-2xl font-extrabold">Instant QR Generator</h2>
+                                    <p className="text-sm text-muted">Generate a payment link for on-site sales</p>
                                 </div>
                             </div>
 
                             {!qrGenerated ? (
                                 <form onSubmit={generateQR} className="space-y-4">
                                     <div className="space-y-1.5">
-                                        <label htmlFor="qramt" className="text-xs font-bold text-muted uppercase tracking-widest">Amount *</label>
-                                        <input id="qramt" type="text" required value={qrAmount} onChange={e => setQrAmount(e.target.value)} className="form-input text-xl font-bold" placeholder="₹500" />
+                                        <label htmlFor="qramt" className="text-xs font-bold text-muted uppercase tracking-widest">Sale Amount *</label>
+                                        <input id="qramt" type="text" required value={qrAmount} onChange={e => setQrAmount(e.target.value)} className="form-input text-2xl font-black text-secondary" placeholder="₹0" />
                                     </div>
-                                    <button type="submit" className="btn-primary w-full justify-center py-3.5 text-base" title="Generate QR Code">
-                                        <QrCode size={18} aria-hidden="true" /> Generate QR Code
+                                    <button type="submit" className="btn-primary w-full justify-center py-4 text-base" title="Generate QR Code">
+                                        <QrCode size={20} aria-hidden="true" /> Generate Dynamic QR
                                     </button>
                                 </form>
                             ) : (
                                 <div className="flex flex-col items-center gap-6">
-                                    <p className="text-sm text-muted text-center">Show this QR to the consumer to scan and pay.</p>
+                                    <p className="text-sm text-muted text-center font-medium">Customer scans this code to initiate an instant bank-to-bank transfer.</p>
                                     <FakeQR amount={qrAmount} id={user.id} />
 
                                     {!qrPaid ? (
                                         <div className="w-full space-y-3">
                                             <div className="flex items-center gap-2 text-sm text-muted justify-center animate-pulse">
-                                                <div className="w-2 h-2 rounded-full bg-warning" aria-hidden="true" />
-                                                Waiting for payment…
+                                                <div className="w-2.5 h-2.5 rounded-full bg-warning shadow-[0_0_8px_rgba(var(--warning-rgb),0.5)]" aria-hidden="true" />
+                                                Listening for payment confirmation...
                                             </div>
                                             <button onClick={simulatePayment} className="btn-secondary w-full justify-center py-3 text-sm" title="Simulate consumer payment">
-                                                Simulate Consumer Payment ↗
+                                                Simulate Verified Payment ↗
                                             </button>
                                         </div>
                                     ) : (
                                         <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="w-full flex flex-col items-center gap-3">
-                                            <div className="w-16 h-16 rounded-full bg-success/15 flex items-center justify-center">
-                                                <CheckCircle2 size={36} className="text-success" aria-hidden="true" />
+                                            <div className="w-20 h-20 rounded-full bg-success/10 flex items-center justify-center shadow-[0_0_30px_rgba(var(--success-rgb),0.2)]">
+                                                <CheckCircle2 size={40} className="text-success" aria-hidden="true" />
                                             </div>
-                                            <p className="text-xl font-extrabold text-success">Payment Confirmed!</p>
-                                            <p className="text-sm text-muted">{qrAmount} received successfully.</p>
-                                            <button onClick={() => { setQrGenerated(false); setQrPaid(false); setQrAmount("₹0"); }} className="btn-secondary py-2.5 px-6 text-sm mt-2" title="Create new payment">
-                                                New Payment
+                                            <div className="text-center">
+                                                <p className="text-2xl font-black text-success">SUCCESS!</p>
+                                                <p className="text-sm text-muted">Transaction ID: TXN-{Math.random().toString(36).substring(7).toUpperCase()}</p>
+                                                <p className="text-lg font-bold text-foreground mt-1">{qrAmount} added to wallet.</p>
+                                            </div>
+                                            <button onClick={() => { setQrGenerated(false); setQrPaid(false); setQrAmount("₹0"); }} className="btn-primary py-3 px-8 text-sm mt-4 shadow-lg shadow-primary/20" title="Create new payment">
+                                                Complete & Reset
                                             </button>
                                         </motion.div>
                                     )}
@@ -448,29 +553,30 @@ export default function ShopkeeperDashboard() {
 
                 {/* ── PROFILE ── */}
                 {activeTab === "profile" && (
-                    <motion.div key="profile" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-lg">
-                        <div className="glass-card p-8">
-                            <h2 className="text-2xl font-extrabold mb-6">Shop Profile</h2>
-                            <form onSubmit={e => { e.preventDefault(); setFormSuccess("Profile saved!"); setTimeout(() => setFormSuccess(""), 2000); }} className="space-y-4">
+                    <motion.div key="profile" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-xl">
+                        <div className="glass-card p-10 relative overflow-hidden">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 blur-[80px] pointer-events-none" />
+                            <h2 className="text-2xl font-black mb-8 tracking-tight">Vender Profile Settings</h2>
+                            <form onSubmit={e => { e.preventDefault(); setFormSuccess("Shop information updated!"); setTimeout(() => setFormSuccess(""), 2000); }} className="space-y-6">
                                 {formSuccess && (
-                                    <div className="flex items-center gap-2 p-3 rounded-xl bg-success/10 border border-success/30 text-success text-sm" role="status">
-                                        <CheckCircle2 size={15} aria-hidden="true" /> {formSuccess}
+                                    <div className="flex items-center gap-2 p-3 rounded-xl bg-success/10 border border-success/30 text-success text-xs font-bold uppercase tracking-wider" role="status">
+                                        <CheckCircle2 size={14} aria-hidden="true" /> {formSuccess}
                                     </div>
                                 ) || null}
                                 <div className="space-y-1.5">
-                                    <label htmlFor="sname" className="text-xs font-bold text-muted uppercase tracking-widest">Shop Name</label>
-                                    <input id="sname" type="text" value={profile.shopName} onChange={e => setProfile({ ...profile, shopName: e.target.value })} className="form-input" />
+                                    <label htmlFor="sname" className="text-xs font-black text-muted uppercase tracking-[0.2em]">Shop Name Identity</label>
+                                    <input id="sname" type="text" value={profile.shopName} onChange={e => setProfile({ ...profile, shopName: e.target.value })} className="form-input text-lg font-bold" />
                                 </div>
                                 <div className="space-y-1.5">
-                                    <label htmlFor="sdesc" className="text-xs font-bold text-muted uppercase tracking-widest">Description</label>
-                                    <textarea id="sdesc" value={profile.description} onChange={e => setProfile({ ...profile, description: e.target.value })} className="form-input min-h-[80px] resize-none" />
+                                    <label htmlFor="sdesc" className="text-xs font-black text-muted uppercase tracking-[0.2em]">Platform Biography</label>
+                                    <textarea id="sdesc" value={profile.description} onChange={e => setProfile({ ...profile, description: e.target.value })} className="form-input min-h-[100px] resize-none leading-relaxed" />
                                 </div>
                                 <div className="space-y-1.5">
-                                    <label htmlFor="scontact" className="text-xs font-bold text-muted uppercase tracking-widest">Contact</label>
-                                    <input id="scontact" type="text" value={profile.contact} onChange={e => setProfile({ ...profile, contact: e.target.value })} className="form-input" />
+                                    <label htmlFor="scontact" className="text-xs font-black text-muted uppercase tracking-[0.2em]">Point of Contact (Email/Phone)</label>
+                                    <input id="scontact" type="text" value={profile.contact} onChange={e => setProfile({ ...profile, contact: e.target.value })} className="form-input font-mono" />
                                 </div>
-                                <button type="submit" className="btn-primary py-3 px-6" title="Save profile settings">
-                                    <Save size={16} aria-hidden="true" /> Save Profile
+                                <button type="submit" className="btn-primary py-4 px-10 font-black text-sm shadow-xl shadow-primary/20" title="Save profile settings">
+                                    UPDATE PROFESSIONAL IDENTITY
                                 </button>
                             </form>
                         </div>
@@ -482,9 +588,14 @@ export default function ShopkeeperDashboard() {
     );
 }
 
-// Sub-components used
 const ShoppingCart = (props: any) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
         <circle cx="8" cy="21" r="1" /><circle cx="19" cy="21" r="1" /><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" />
+    </svg>
+);
+
+const Loader2 = (props: any) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props} className={"animate-spin " + (props.className || "")}>
+        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
     </svg>
 );

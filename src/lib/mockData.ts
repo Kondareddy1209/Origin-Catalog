@@ -42,6 +42,7 @@ export interface MockOrder {
     quantity: number;
     amount: string;
     status: "pending" | "paid" | "cancelled";
+    paymentMethod?: string;
     createdAt: string;
 }
 

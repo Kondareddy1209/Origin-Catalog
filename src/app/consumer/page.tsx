@@ -10,7 +10,8 @@ import DashboardShell from "@/components/DashboardShell";
 import {
     ShoppingBag, ShoppingCart, User, Mic,
     Search, Filter, CheckCircle2, X,
-    AlertTriangle, ArrowRight, Trash2, Plus, Minus, type LucideIcon
+    AlertTriangle, ArrowRight, Trash2, Plus, Minus,
+    Wallet, CreditCard, QrCode, Building2, Landmark, type LucideIcon
 } from "lucide-react";
 import { type MockProduct } from "@/lib/mockData";
 import Image from "next/image";
@@ -47,7 +48,10 @@ export default function ConsumerDashboard() {
     // Purchase/Payment flow
     const [selectedProduct, setSelectedProduct] = useState<MockProduct | null>(null);
     const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
-    const [purchaseStep, setPurchaseStep] = useState<"detail" | "cart" | "payment" | "success">("detail");
+    const [purchaseStep, setPurchaseStep] = useState<"detail" | "cart" | "payment-method" | "payment" | "success">("detail");
+    const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | null>(null);
+    const [lastTransactionId, setLastTransactionId] = useState("");
+    const [lastOrderItems, setLastOrderItems] = useState<Omit<import("@/lib/mockData").MockOrder, "id" | "createdAt" | "status">[]>([]);
     const [isProcessing, setIsProcessing] = useState(false);
 
     useEffect(() => {
@@ -93,6 +97,7 @@ export default function ConsumerDashboard() {
             }
             return [...prev, { ...p, cartQuantity: 1 }];
         });
+        setIsCartOpen(true); // Guide user to the cart immediately
     };
 
     const removeFromCart = (id: string) => setCart(prev => prev.filter(item => item.id !== id));
@@ -113,7 +118,11 @@ export default function ConsumerDashboard() {
     }, 0);
 
     const finalizePayment = () => {
+        if (!selectedPaymentMethod) return;
         setIsProcessing(true);
+        const txnId = `TXN-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+        setLastTransactionId(txnId);
+
         // Simulate payment processing
         setTimeout(() => {
             const orderPayload = cart.map(item => ({
@@ -125,8 +134,10 @@ export default function ConsumerDashboard() {
                 productName: item.name,
                 quantity: item.cartQuantity,
                 amount: `₹${(parseFloat(item.price.replace(/[^0-9.]/g, "")) * item.cartQuantity).toLocaleString()}`,
+                paymentMethod: selectedPaymentMethod,
             }));
 
+            setLastOrderItems(orderPayload);
             placeOrder(orderPayload);
             setCart([]);
             setIsProcessing(false);
@@ -143,18 +154,35 @@ export default function ConsumerDashboard() {
             title={NAV_ITEMS.find((n) => n.id === activeTab)?.label ?? "Marketplace"}
             subtitle={`Welcome, ${user.name}`}
             headerAction={
-                <button
-                    onClick={() => setIsCartOpen(true)}
-                    className="relative p-2.5 rounded-xl bg-surface border border-white/5 text-muted hover:text-foreground transition-all"
-                    title="View Shopping Cart"
-                >
-                    <ShoppingCart size={18} />
+                <div className="flex items-center gap-3">
                     {cart.length > 0 && (
-                        <span className="absolute -top-1 -right-1 w-4 h-4 bg-secondary text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                            {cart.length}
-                        </span>
+                        <motion.button
+                            initial={{ opacity: 0, x: 20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            onClick={() => {
+                                setSelectedPaymentMethod(null);
+                                setPurchaseStep("payment-method");
+                                setIsPurchaseModalOpen(true);
+                                setIsCartOpen(false);
+                            }}
+                            className="hidden md:flex items-center gap-2 px-4 py-2 bg-secondary/10 border border-secondary/20 rounded-xl text-secondary text-xs font-black uppercase tracking-widest hover:bg-secondary hover:text-white transition-all shadow-[0_0_15px_rgba(var(--secondary-rgb),0.2)]"
+                        >
+                            Checkout Now <ArrowRight size={14} />
+                        </motion.button>
                     )}
-                </button>
+                    <button
+                        onClick={() => setIsCartOpen(true)}
+                        className="relative p-2.5 rounded-xl bg-surface border border-white/5 text-muted hover:text-foreground transition-all"
+                        title="View Shopping Cart"
+                    >
+                        <ShoppingCart size={18} />
+                        {cart.length > 0 && (
+                            <span className="absolute -top-1 -right-1 w-4 h-4 bg-secondary text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                                {cart.length}
+                            </span>
+                        )}
+                    </button>
+                </div>
             }
         >
             <AnimatePresence mode="wait">
@@ -225,29 +253,48 @@ export default function ConsumerDashboard() {
                                         </h3>
                                         <p className="text-muted text-xs font-semibold">By: {p.shopName}</p>
 
-                                        <div className="flex gap-2 mt-4">
+                                        <div className="flex flex-col gap-2 mt-4">
                                             <button
                                                 onClick={() => {
-                                                    setSelectedProduct(p);
-                                                    setPurchaseStep("detail");
+                                                    setCart([{ ...p, cartQuantity: 1 }]);
+                                                    setSelectedPaymentMethod(null);
+                                                    setPurchaseStep("payment-method");
                                                     setIsPurchaseModalOpen(true);
+                                                    setIsCartOpen(false);
                                                 }}
-                                                className="flex-1 py-1.5 rounded-lg border border-white/10 text-[10px] font-bold text-muted hover:text-foreground transition-all uppercase tracking-wider"
-                                                title={`View details for ${p.name}`}
-                                            >
-                                                Details
-                                            </button>
-                                            <button
-                                                onClick={() => addToCart(p)}
                                                 disabled={p.isBanned}
-                                                className={`flex-[2] py-1.5 rounded-lg font-bold text-xs flex items-center justify-center gap-2 transition-all ${p.isBanned
+                                                className={`w-full py-2.5 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${p.isBanned
                                                     ? 'bg-white/5 text-muted cursor-not-allowed'
-                                                    : 'bg-primary/10 text-primary hover:bg-primary hover:text-white'
+                                                    : 'bg-primary text-white hover:bg-primary/90 shadow-[0_5px_15px_rgba(var(--primary-rgb),0.3)]'
                                                     }`}
-                                                title={`Add ${p.name} to cart`}
+                                                title={`Directly buy ${p.name}`}
                                             >
-                                                <Plus size={14} /> Add to Cart
+                                                Buy Now <ArrowRight size={14} />
                                             </button>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => {
+                                                        setSelectedProduct(p);
+                                                        setPurchaseStep("detail");
+                                                        setIsPurchaseModalOpen(true);
+                                                    }}
+                                                    className="flex-1 py-2 rounded-lg border border-white/10 text-[10px] font-bold text-muted hover:text-foreground transition-all uppercase tracking-wider"
+                                                    title={`View details for ${p.name}`}
+                                                >
+                                                    Details
+                                                </button>
+                                                <button
+                                                    onClick={() => addToCart(p)}
+                                                    disabled={p.isBanned}
+                                                    className={`flex-1 py-2 rounded-lg font-bold text-[10px] flex items-center justify-center gap-1.5 transition-all ${p.isBanned
+                                                        ? 'bg-white/5 text-muted cursor-not-allowed'
+                                                        : 'bg-white/5 text-muted hover:bg-white/10 hover:text-foreground'
+                                                        }`}
+                                                    title={`Add ${p.name} to cart`}
+                                                >
+                                                    <Plus size={12} /> Cart
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 </motion.div>
@@ -398,11 +445,16 @@ export default function ConsumerDashboard() {
                                         <span className="text-2xl font-black text-secondary">₹{cartTotalNum.toLocaleString()}</span>
                                     </div>
                                     <button
-                                        onClick={() => { setPurchaseStep("payment"); setIsPurchaseModalOpen(true); }}
+                                        onClick={() => {
+                                            setSelectedPaymentMethod(null);
+                                            setPurchaseStep("payment-method");
+                                            setIsPurchaseModalOpen(true);
+                                            setIsCartOpen(false);
+                                        }}
                                         className="btn-primary w-full justify-center py-4 text-base"
-                                        title="Proceed to checkout"
+                                        title="Proceed to payment selection"
                                     >
-                                        Proceed to Checkout <ArrowRight size={18} />
+                                        Proceed to Pay <ArrowRight size={18} />
                                     </button>
                                 </div>
                             )}
@@ -477,87 +529,174 @@ export default function ConsumerDashboard() {
                                 </>
                             )}
 
+                            {/* Step Payment Method Selection */}
+                            {purchaseStep === "payment-method" && (
+                                <div className="p-8">
+                                    <h2 className="text-2xl font-extrabold mb-2">Select Payment Method</h2>
+                                    <p className="text-sm text-muted mb-8">Choose your preferred way to pay</p>
+
+                                    <div className="space-y-3 mb-8">
+                                        {[
+                                            { id: "upi", label: "UPI / QR Payment", icon: QrCode, color: "text-primary" },
+                                            { id: "card", label: "Credit / Debit Card", icon: CreditCard, color: "text-secondary" },
+                                            { id: "netbanking", label: "Net Banking", icon: Building2, color: "text-accent" },
+                                            { id: "wallet", label: "Digital Wallet", icon: Wallet, color: "text-success" },
+                                        ].map(m => (
+                                            <button
+                                                key={m.id}
+                                                onClick={() => setSelectedPaymentMethod(m.id)}
+                                                className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${selectedPaymentMethod === m.id
+                                                    ? 'bg-primary/5 border-primary shadow-[0_0_15px_rgba(var(--primary-rgb),0.1)]'
+                                                    : 'bg-white/[0.02] border-white/5 hover:border-white/10'
+                                                    }`}
+                                                title={`Select ${m.label} as payment method`}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`p-2 rounded-lg bg-black/20 ${m.color}`}>
+                                                        <m.icon size={20} />
+                                                    </div>
+                                                    <span className="font-bold text-sm">{m.label}</span>
+                                                </div>
+                                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedPaymentMethod === m.id ? 'border-primary' : 'border-white/10'
+                                                    }`}>
+                                                    {selectedPaymentMethod === m.id && <div className="w-2.5 h-2.5 rounded-full bg-primary" />}
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => {
+                                                if (selectedProduct) setPurchaseStep("detail");
+                                                else setIsPurchaseModalOpen(false);
+                                            }}
+                                            className="btn-secondary py-4 px-6"
+                                            title="Return to previous step"
+                                        >
+                                            Back
+                                        </button>
+                                        <button
+                                            disabled={!selectedPaymentMethod}
+                                            onClick={() => setPurchaseStep("payment")}
+                                            className="btn-primary flex-1 justify-center py-4"
+                                            title="Continue to final confirmation"
+                                        >
+                                            Continue <ArrowRight size={18} />
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Step Payment Confirmation */}
                             {purchaseStep === "payment" && (
                                 <div className="p-10 flex flex-col">
-                                    <h2 className="text-2xl font-extrabold mb-6">Confirm Transaction</h2>
+                                    <h2 className="text-2xl font-extrabold mb-2">Final Confirmation</h2>
+                                    <p className="text-sm text-muted mb-8">Review your order before payment</p>
+
                                     <div className="space-y-4 mb-8">
                                         <div className="max-h-48 overflow-y-auto space-y-2 pr-2">
                                             {cart.map(item => (
                                                 <div key={item.id} className="flex justify-between text-sm py-2 border-b border-white/5">
-                                                    <span className="text-muted">{item.name} (x{item.cartQuantity})</span>
+                                                    <span className="text-muted font-medium">{item.name} (x{item.cartQuantity})</span>
                                                     <span className="font-bold">₹{(parseFloat(item.price.replace(/[^0-9.]/g, "")) * item.cartQuantity).toLocaleString()}</span>
                                                 </div>
                                             ))}
                                         </div>
-                                        <div className="flex justify-between items-center pt-4 border-t border-white/10">
-                                            <span className="text-lg font-bold">Total Amount</span>
-                                            <span className="text-2xl font-black text-secondary">₹{cartTotalNum.toLocaleString()}</span>
+                                        <div className="pt-4 space-y-2">
+                                            <div className="flex justify-between items-center text-xs text-muted uppercase tracking-widest font-bold">
+                                                <span>Payment via</span>
+                                                <span className="text-foreground">{selectedPaymentMethod?.toUpperCase()}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center pt-2">
+                                                <span className="text-lg font-bold">Subtotal</span>
+                                                <span className="text-2xl font-black text-secondary">₹{cartTotalNum.toLocaleString()}</span>
+                                            </div>
                                         </div>
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-4">
                                         <button
                                             disabled={isProcessing}
-                                            onClick={() => setIsPurchaseModalOpen(false)}
+                                            onClick={() => setPurchaseStep("payment-method")}
                                             className="btn-secondary py-4"
-                                            title="Cancel payment"
+                                            title="Change payment method"
                                         >
-                                            Cancel
+                                            Change Method
                                         </button>
                                         <button
                                             disabled={isProcessing}
                                             onClick={finalizePayment}
                                             className="btn-primary py-4 justify-center"
-                                            title="Confirm and pay"
+                                            title="Complete payment transaction"
                                         >
-                                            {isProcessing ? "Processing..." : "Confirm & Pay"}
+                                            {isProcessing ? "Processing..." : "Complete Order"}
                                         </button>
                                     </div>
-                                    <p className="text-[10px] text-muted text-center mt-6 uppercase tracking-widest font-bold">
-                                        Certified Secure Payment Portal
-                                    </p>
+                                    <div className="flex items-center justify-center gap-2 mt-6 opacity-40">
+                                        <Landmark size={12} />
+                                        <p className="text-[10px] uppercase tracking-widest font-black">Secure Bank Encryption Active</p>
+                                    </div>
                                 </div>
                             )}
 
                             {/* Step Success */}
                             {purchaseStep === "success" && (
-                                <div className="p-12 flex flex-col items-center text-center">
+                                <div className="p-10 flex flex-col items-center">
                                     <motion.div
                                         initial={{ scale: 0.5, opacity: 0 }}
                                         animate={{ scale: 1, opacity: 1 }}
-                                        className="w-24 h-24 bg-success/15 rounded-full flex items-center justify-center text-success mb-6"
+                                        className="w-20 h-20 bg-success/10 rounded-full flex items-center justify-center text-success mb-6 shadow-[0_0_30px_rgba(var(--success-rgb),0.2)]"
                                     >
-                                        <CheckCircle2 size={48} />
+                                        <CheckCircle2 size={40} />
                                     </motion.div>
-                                    <h2 className="text-3xl font-extrabold mb-3 text-success">Purchase Success!</h2>
-                                    <p className="text-muted mb-8 text-sm">
-                                        Your order has been logged in your dashboard and the shopkeepers' records.
-                                    </p>
-                                    <div className="w-full p-6 bg-white/5 rounded-2xl border border-success/20 flex flex-col gap-3 mb-8 items-start">
-                                        <div className="flex justify-between w-full text-xs">
-                                            <span className="text-muted font-bold uppercase tracking-tighter">Status</span>
-                                            <span className="text-success font-black uppercase tracking-widest text-[10px]">Paid & Verified</span>
+                                    <h2 className="text-3xl font-black mb-2 text-success tracking-tight">PAYMENT SUCCESS</h2>
+                                    <p className="text-sm text-muted mb-8 text-center font-medium">Your digital receipt has been generated.</p>
+
+                                    <div className="w-full p-6 bg-white/[0.03] rounded-2xl border border-white/5 flex flex-col gap-4 mb-8">
+                                        <div className="space-y-3">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-[10px] font-black text-muted uppercase tracking-widest">Transaction ID</span>
+                                                <span className="font-mono text-xs text-primary font-bold">{lastTransactionId}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-[10px] font-black text-muted uppercase tracking-widest">Payment Method</span>
+                                                <span className="text-xs font-bold uppercase">{selectedPaymentMethod}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-[10px] font-black text-muted uppercase tracking-widest">Date & Time</span>
+                                                <span className="text-xs font-bold">{new Date().toLocaleString()}</span>
+                                            </div>
                                         </div>
-                                        <div className="flex justify-between w-full text-xs">
-                                            <span className="text-muted font-bold uppercase tracking-tighter">Transaction Log Time</span>
-                                            <span className="font-mono text-[10px]">{new Date().toLocaleString()}</span>
+
+                                        <div className="pt-4 border-t border-white/5">
+                                            <p className="text-[10px] font-black text-muted uppercase tracking-widest mb-3 text-center">Purchased Items</p>
+                                            <div className="space-y-2">
+                                                {lastOrderItems.map((item, idx) => (
+                                                    <div key={idx} className="flex justify-between items-center text-xs">
+                                                        <span className="font-bold">{item.productName} (x{item.quantity})</span>
+                                                        <span className="text-muted italic">from {item.shopName}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
-                                        <div className="flex justify-between w-full text-sm pt-2 border-t border-white/5">
-                                            <span className="text-muted font-bold uppercase tracking-tighter">Total Paid</span>
-                                            <span className="font-black text-secondary text-base">₹{cartTotalNum.toLocaleString()}</span>
+
+                                        <div className="pt-4 border-t border-white/5 flex justify-between items-center">
+                                            <span className="text-sm font-bold">Paid Amount</span>
+                                            <span className="text-xl font-black text-secondary">₹{cartTotalNum.toLocaleString()}</span>
                                         </div>
                                     </div>
+
                                     <button
                                         onClick={() => {
                                             setIsPurchaseModalOpen(false);
                                             setActiveTab("orders");
                                             setIsCartOpen(false);
                                         }}
-                                        className="btn-primary w-full justify-center py-4"
-                                        title="View order history"
+                                        className="btn-primary w-full justify-center py-4 font-black text-sm tracking-widest shadow-lg shadow-primary/20"
+                                        title="View all purchase records"
                                     >
-                                        View Purchase Logs
+                                        VIEW PURCHASE RECORDS
                                     </button>
                                 </div>
                             )}
